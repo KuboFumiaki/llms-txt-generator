@@ -1,0 +1,47 @@
+# WordPress specific files
+wp-config.php
+wp-content/uploads/
+wp-content/blogs.dir/
+wp-content/upgrade/
+wp-content/backup-db/
+wp-content/advanced-cache.php
+wp-content/wp-cache-config.php
+wp-content/cache/
+wp-content/cache/supercache/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node modules (if any build tools are used)
+node_modules/
+npm-debug.log*
+
+# Generated files
+*.log
+*.tmp
+*.temp
+
+# Development files
+*.dev
+*.test
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# WordPress Plugin specific
+llms.txt
+*.zip
