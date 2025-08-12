@@ -1,4 +1,4 @@
-=== LLMS.txt Generator ===
+=== LLMs.txt Generator for WordPress ===
 Contributors: yourusername
 Tags: llm, ai, machine learning, content export, markdown
 Requires at least: 5.0
@@ -12,7 +12,7 @@ WordPressサイトのコンテンツからLLMS.txtファイルを自動生成す
 
 == Description ==
 
-LLMS.txt Generatorは、WordPressサイトのコンテンツをAIや機械学習モデル（LLMs: Large Language Models）が読みやすい形式でエクスポートするプラグインです。
+LLMs.txt Generator for WordPressは、WordPressサイトのコンテンツをAIや機械学習モデル（LLMs: Large Language Models）が読みやすい形式でエクスポートするプラグインです。
 
 = 主な機能 =
 
@@ -36,7 +36,7 @@ LLMS.txt Generatorは、WordPressサイトのコンテンツをAIや機械学習
 = 使用方法 =
 
 1. プラグインを有効化
-2. 管理画面の「ツール」→「LLMS.txt Generator」で設定
+2. 管理画面の「ツール」→「LLMs.txt Generator」で設定
 3. カスタムテキスト、文字コード、投稿タイプを設定
 4. 「LLMS.txtを生成」ボタンをクリック
 5. サイトルート（例: https://yoursite.com/llms.txt）でファイルにアクセス可能
@@ -52,7 +52,7 @@ LLMS.txt Generatorは、WordPressサイトのコンテンツをAIや機械学習
 = 自動インストール =
 
 1. WordPress管理画面で「プラグイン」→「新規追加」
-2. 「LLMS.txt Generator」を検索
+2. 「LLMs.txt Generator for WordPress」を検索
 3. 「今すぐインストール」→「有効化」
 
 = 手動インストール =
@@ -63,7 +63,7 @@ LLMS.txt Generatorは、WordPressサイトのコンテンツをAIや機械学習
 
 = 設定 =
 
-1. 「ツール」→「LLMS.txt Generator」にアクセス
+1. 「ツール」→「LLMs.txt Generator」にアクセス
 2. 必要に応じてカスタムテキストを設定
 3. 文字コード（UTF-8またはShift-JIS）を選択
 4. 出力する投稿タイプと順序を設定

@@ -1,4 +1,4 @@
-# LLMS.txt Generator
+# LLMs.txt Generator for WordPress
 
 WordPressサイトのコンテンツからLLMS.txtファイルを自動生成するプラグインです。AIや機械学習モデル（LLMs: Large Language Models）がサイト内容を理解するのに最適なフォーマットで出力します。
 
