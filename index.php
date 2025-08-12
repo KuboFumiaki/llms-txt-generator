@@ -85,7 +85,7 @@ function generate_llms_txt() {
     // $content .= "- サイト名: {$site_name}\n";
     // $content .= "- URL: {$site_url}\n";
     // $content .= "- 説明: {$site_description}\n";
-    $content .= "- 最終更新: " . date('Y-m-d H:i:s') . "\n\n";
+    $content .= "# 最終更新: " . date('Y-m-d H:i:s') . "\n\n";
     
     // 投稿タイプの設定を取得
     $post_type_settings = get_option('llms_post_type_settings', array());
