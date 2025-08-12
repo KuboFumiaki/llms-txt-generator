@@ -1,4 +1,4 @@
-# LLMs.txt Generator
+# LLMs.txt Generator for WordPress
 
 WordPressサイトのコンテンツからLLMs.txtファイルを自動生成するプラグインです。AIや機械学習モデル（LLMs: Large Language Models）がサイト内容を理解するのに最適なフォーマットで出力します。
 
@@ -31,7 +31,7 @@ git clone https://github.com/KuboFumiaki/llms-txt-generator.git
 
 ### 方法2: ZIPファイルでインストール
 
-1. [Releases](https://github.com/KuboFumiaki/llms-txt-generator/releases)から最新版をダウンロード
+1. リポジトリから最新版をダウンロード
 2. WordPress管理画面の「プラグイン」→「新規追加」→「プラグインのアップロード」
 3. ZIPファイルをアップロードして有効化
 
@@ -52,7 +52,9 @@ git clone https://github.com/KuboFumiaki/llms-txt-generator.git
 
 サイトの説明
 
-- 最終更新: 2024-01-01 12:00:00
+※ここより上部はカスタムテキストに置き換え可能※
+
+# 最終更新: 2025-01-01 12:00:00
 
 ## 投稿
 
@@ -102,10 +104,6 @@ llms-txt-generator/
 3. 変更をコミット (`git commit -m 'Add some amazing feature'`)
 4. ブランチにプッシュ (`git push origin feature/amazing-feature`)
 5. プルリクエストを作成
-
-## 📝 ライセンス
-
-このプロジェクトは [GPL v2](LICENSE) ライセンスの下で公開されています。
 
 ## 🐛 バグ報告・機能リクエスト
 
