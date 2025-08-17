@@ -3,7 +3,7 @@
 WordPressサイトのコンテンツからLLMs.txtファイルを自動生成するプラグインです。AIや機械学習モデル（LLMs: Large Language Models）がサイト内容を理解するのに最適なフォーマットで出力します。
 
 ![WordPress Plugin](https://img.shields.io/badge/WordPress-Plugin-blue.svg)
-![PHP Version](https://img.shields.io/badge/PHP-7.4%2B-blue.svg)
+![PHP Version](https://img.shields.io/badge/PHP-7.3%2B-blue.svg)
 ![License](https://img.shields.io/badge/License-GPL%20v2-blue.svg)
 
 ## 📋 主な機能
@@ -68,7 +68,7 @@ git clone https://github.com/KuboFumiaki/llms-txt-generator.git
 ## 🔧 システム要件
 
 - **WordPress**: 5.0以上
-- **PHP**: 7.4以上
+- **PHP**: 7.3以上
 - **拡張機能**: mbstring（文字コード変換用）
 
 ## 🛡️ セキュリティ機能

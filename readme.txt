@@ -4,7 +4,7 @@ Tags: llm, ai, machine learning, content export, markdown
 Requires at least: 5.0
 Tested up to: 6.4
 Stable tag: 1.0.0
-Requires PHP: 7.4
+Requires PHP: 7.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -44,7 +44,7 @@ LLMs.txt Generator for WordPressは、WordPressサイトのコンテンツをAI�
 = システム要件 =
 
 * WordPress 5.0以上
-* PHP 7.4以上
+* PHP 7.3以上
 * mbstring拡張（文字コード変換用）
 
 == Installation ==
