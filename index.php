@@ -143,6 +143,45 @@ function generate_llms_txt() {
         $posts_by_type = array_merge($ordered_posts_by_type, $posts_by_type);
     }
     
+    // 固定ページの処理（投稿よりも先に出力）
+    if (!empty($pages)) {
+        // 固定ページの順序設定
+        if (!empty($page_order)) {
+            $ordered_pages = array();
+            $pages_by_id = array();
+            
+            // ページをIDでインデックス化
+            foreach ($pages as $page) {
+                $pages_by_id[$page->ID] = $page;
+            }
+            
+            // 順序設定に従って並び替え
+            foreach ($page_order as $page_id) {
+                if (isset($pages_by_id[$page_id])) {
+                    $ordered_pages[] = $pages_by_id[$page_id];
+                    unset($pages_by_id[$page_id]);
+                }
+            }
+            
+            // 順序設定にない固定ページを最後に追加
+            $pages = array_merge($ordered_pages, array_values($pages_by_id));
+        }
+        
+        $content .= "## 固定ページ\n";
+        
+        foreach ($pages as $page) {
+            $page_url = get_permalink($page->ID);
+            // wp_trim_words関数が存在しない場合の代替処理
+            if (function_exists('wp_trim_words')) {
+                $excerpt = wp_trim_words($page->post_content, 15, '...');
+            } else {
+                $excerpt = mb_substr(strip_tags($page->post_content), 0, 50) . '...';
+            }
+            $content .= "- [{$page->post_title}]({$page_url}):{$excerpt}\n";
+        }
+        $content .= "\n";
+    }
+    
     // 投稿タイプ別に出力
     foreach ($posts_by_type as $post_type => $posts) {
         $post_type_object = get_post_type_object($post_type);
@@ -215,45 +254,6 @@ function generate_llms_txt() {
             }
             $content .= "\n";
         }
-    }
-    
-    // 固定ページの処理
-    if (!empty($pages)) {
-        // 固定ページの順序設定
-        if (!empty($page_order)) {
-            $ordered_pages = array();
-            $pages_by_id = array();
-            
-            // ページをIDでインデックス化
-            foreach ($pages as $page) {
-                $pages_by_id[$page->ID] = $page;
-            }
-            
-            // 順序設定に従って並び替え
-            foreach ($page_order as $page_id) {
-                if (isset($pages_by_id[$page_id])) {
-                    $ordered_pages[] = $pages_by_id[$page_id];
-                    unset($pages_by_id[$page_id]);
-                }
-            }
-            
-            // 順序設定にない固定ページを最後に追加
-            $pages = array_merge($ordered_pages, array_values($pages_by_id));
-        }
-        
-        $content .= "## 固定ページ\n";
-        
-        foreach ($pages as $page) {
-            $page_url = get_permalink($page->ID);
-            // wp_trim_words関数が存在しない場合の代替処理
-            if (function_exists('wp_trim_words')) {
-                $excerpt = wp_trim_words($page->post_content, 15, '...');
-            } else {
-                $excerpt = mb_substr(strip_tags($page->post_content), 0, 50) . '...';
-            }
-            $content .= "- [{$page->post_title}]({$page_url}):{$excerpt}\n";
-        }
-        $content .= "\n";
     }
     
     // ファイルに保存（設定された文字コードで出力）
