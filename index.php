@@ -36,6 +36,10 @@ function llms_txt_generator_activate() {
         add_option('llms_post_type_settings', array('enabled' => array(), 'order' => array()));
     }
     
+    if (!get_option('llms_page_settings')) {
+        add_option('llms_page_settings', array('enabled' => false, 'order' => array()));
+    }
+    
     // 初回のLLMS.txtファイルを生成
     generate_llms_txt();
 }
@@ -92,13 +96,23 @@ function generate_llms_txt() {
     $enabled_post_types = isset($post_type_settings['enabled']) ? $post_type_settings['enabled'] : array();
     $post_type_order = isset($post_type_settings['order']) ? $post_type_settings['order'] : array();
     
+    // 固定ページの設定を取得
+    $page_settings = get_option('llms_page_settings', array());
+    $pages_enabled = isset($page_settings['enabled']) ? $page_settings['enabled'] : false;
+    $page_order = isset($page_settings['order']) ? $page_settings['order'] : array();
+    
     // 投稿タイプ別に記事を分類
     $posts_by_type = array();
+    $pages = array(); // 固定ページ専用配列
+    
     foreach ($all_posts as $post) {
         $post_type = get_post_type($post->ID);
         
-        // 固定ページ（page）を除外
+        // 固定ページの処理
         if ($post_type === 'page') {
+            if ($pages_enabled) {
+                $pages[] = $post;
+            }
             continue;
         }
         
@@ -203,6 +217,45 @@ function generate_llms_txt() {
         }
     }
     
+    // 固定ページの処理
+    if (!empty($pages)) {
+        // 固定ページの順序設定
+        if (!empty($page_order)) {
+            $ordered_pages = array();
+            $pages_by_id = array();
+            
+            // ページをIDでインデックス化
+            foreach ($pages as $page) {
+                $pages_by_id[$page->ID] = $page;
+            }
+            
+            // 順序設定に従って並び替え
+            foreach ($page_order as $page_id) {
+                if (isset($pages_by_id[$page_id])) {
+                    $ordered_pages[] = $pages_by_id[$page_id];
+                    unset($pages_by_id[$page_id]);
+                }
+            }
+            
+            // 順序設定にない固定ページを最後に追加
+            $pages = array_merge($ordered_pages, array_values($pages_by_id));
+        }
+        
+        $content .= "## 固定ページ\n";
+        
+        foreach ($pages as $page) {
+            $page_url = get_permalink($page->ID);
+            // wp_trim_words関数が存在しない場合の代替処理
+            if (function_exists('wp_trim_words')) {
+                $excerpt = wp_trim_words($page->post_content, 15, '...');
+            } else {
+                $excerpt = mb_substr(strip_tags($page->post_content), 0, 50) . '...';
+            }
+            $content .= "- [{$page->post_title}]({$page_url}):{$excerpt}\n";
+        }
+        $content .= "\n";
+    }
+    
     // ファイルに保存（設定された文字コードで出力）
     $upload_dir = wp_upload_dir();
     $file_path = ABSPATH . 'llms.txt';
@@ -226,6 +279,8 @@ function generate_llms_txt() {
 if (function_exists('add_action')) {
     add_action('publish_post', 'generate_llms_txt');
     add_action('post_updated', 'generate_llms_txt');
+    add_action('publish_page', 'generate_llms_txt'); // 固定ページ公開時
+    add_action('page_updated', 'generate_llms_txt'); // 固定ページ更新時（存在しない場合はpost_updatedで対応）
 }
 
 // 管理画面にLLMS.txt生成ボタンを追加（WordPress環境でのみ実行）
@@ -305,6 +360,34 @@ function llms_generator_page() {
         }
     }
     
+    // 固定ページ設定の保存処理
+    if (isset($_POST['save_page_settings']) && check_admin_referer('llms_page_settings_action', 'llms_page_settings_nonce')) {
+        if (function_exists('update_option')) {
+            $pages_enabled = isset($_POST['pages_enabled']) ? true : false;
+            $page_order_raw = isset($_POST['page_order']) ? trim($_POST['page_order']) : '';
+            
+            if (!empty($page_order_raw)) {
+                $page_order = array_map('intval', explode(',', $page_order_raw));
+                $page_order = array_filter($page_order); // 空の要素を除去
+            } else {
+                $page_order = array();
+            }
+            
+            $page_settings = array(
+                'enabled' => $pages_enabled,
+                'order' => $page_order
+            );
+            
+            $result = update_option('llms_page_settings', $page_settings);
+            
+            if ($result !== false) {
+                echo '<div class="notice notice-success"><p>固定ページ設定が保存されました！</p></div>';
+            } else {
+                echo '<div class="notice notice-error"><p>固定ページ設定の保存に失敗しました。</p></div>';
+            }
+        }
+    }
+    
     if (isset($_POST['generate_llms']) && check_admin_referer('llms_generate_action', 'llms_generate_nonce')) {
         if (generate_llms_txt()) {
             echo '<div class="notice notice-success"><p>LLMS.txtが生成されました！</p></div>';
@@ -319,6 +402,11 @@ function llms_generator_page() {
     $enabled_post_types = isset($post_type_settings['enabled']) ? $post_type_settings['enabled'] : array();
     $post_type_order = isset($post_type_settings['order']) ? $post_type_settings['order'] : array();
     
+    // 固定ページ設定を取得
+    $page_settings = get_option('llms_page_settings', array());
+    $pages_enabled = isset($page_settings['enabled']) ? $page_settings['enabled'] : false;
+    $page_order = isset($page_settings['order']) ? $page_settings['order'] : array();
+    
     // 利用可能な投稿タイプを取得（固定ページを除外）
     $available_post_types = array();
     if (function_exists('get_post_types')) {
@@ -328,6 +416,19 @@ function llms_generator_page() {
                 $available_post_types[$post_type_key] = $post_type_obj;
             }
         }
+    }
+    
+    // 利用可能な固定ページを取得
+    $available_pages = array();
+    if (function_exists('get_posts')) {
+        $all_pages = get_posts(array(
+            'post_type' => 'page',
+            'post_status' => 'publish',
+            'numberposts' => -1,
+            'orderby' => 'title',
+            'order' => 'ASC'
+        ));
+        $available_pages = $all_pages;
     }
     
     echo '<div class="wrap">';
@@ -561,6 +662,192 @@ function llms_generator_page() {
     
     echo '<hr>';
     
+    // 固定ページ出力設定フォーム
+    echo '<h2>固定ページ出力設定</h2>';
+    echo '<p>LLMS.txtに固定ページを出力するかどうかと、その順番を設定してください。</p>';
+    echo '<form method="post" style="margin-bottom: 30px;">';
+    wp_nonce_field('llms_page_settings_action', 'llms_page_settings_nonce');
+    echo '<table class="form-table">';
+    echo '<tr>';
+    echo '<th scope="row">固定ページの出力</th>';
+    echo '<td>';
+    
+    echo '<div style="margin-bottom: 20px;">';
+    echo '<label>';
+    echo '<input type="checkbox" name="pages_enabled" value="1"' . ($pages_enabled ? ' checked' : '') . '>';
+    echo ' 固定ページをLLMS.txtに出力する';
+    echo '</label>';
+    echo '<p class="description">チェックを入れると、公開されている固定ページがLLMS.txtに含まれます。</p>';
+    echo '</div>';
+    
+    if (!empty($available_pages)) {
+        echo '<div>';
+        echo '<p><strong>出力順序：</strong></p>';
+        echo '<p class="description">上下の矢印ボタンをクリックして順番を変更してください。</p>';
+        echo '<div id="page-order-list" style="border: 1px solid #ddd; padding: 15px; background: #f9f9f9; min-height: 120px;">';
+        
+        // 固定ページの順序設定
+        $ordered_pages = array();
+        if (!empty($page_order)) {
+            foreach ($page_order as $page_id) {
+                foreach ($available_pages as $page) {
+                    if ($page->ID == $page_id) {
+                        $ordered_pages[] = $page;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // 順序設定にない固定ページを最後に追加
+        foreach ($available_pages as $page) {
+            $already_ordered = false;
+            foreach ($ordered_pages as $ordered_page) {
+                if ($ordered_page->ID == $page->ID) {
+                    $already_ordered = true;
+                    break;
+                }
+            }
+            if (!$already_ordered) {
+                $ordered_pages[] = $page;
+            }
+        }
+        
+        foreach ($ordered_pages as $index => $page) {
+            $is_first = ($index === 0);
+            $is_last = ($index === count($ordered_pages) - 1);
+            
+            echo '<div class="page-item" data-page-id="' . esc_attr($page->ID) . '" style="display: flex; align-items: center; padding: 10px; margin: 8px 0; background: #fff; border: 1px solid #ccc; border-radius: 3px;">';
+            
+            // 固定ページタイトル
+            echo '<span style="flex: 1; font-weight: 500;">';
+            echo esc_html($page->post_title) . ' (ID: ' . esc_html($page->ID) . ')';
+            echo '</span>';
+            
+            // 矢印ボタン
+            echo '<div style="margin-left: 10px;">';
+            
+            // 上矢印ボタン
+            $up_disabled = $is_first ? ' disabled' : '';
+            echo '<button type="button" class="page-move-up button button-small"' . $up_disabled . ' style="margin-right: 5px;" data-page-id="' . esc_attr($page->ID) . '">';
+            echo '↑';
+            echo '</button>';
+            
+            // 下矢印ボタン
+            $down_disabled = $is_last ? ' disabled' : '';
+            echo '<button type="button" class="page-move-down button button-small"' . $down_disabled . ' data-page-id="' . esc_attr($page->ID) . '">';
+            echo '↓';
+            echo '</button>';
+            
+            echo '</div>';
+            echo '</div>';
+        }
+        
+        echo '</div>';
+        $page_order_string = array();
+        foreach ($ordered_pages as $page) {
+            $page_order_string[] = $page->ID;
+        }
+        echo '<input type="hidden" name="page_order" id="page_order" value="' . esc_attr(implode(',', $page_order_string)) . '">';
+        echo '</div>';
+    } else {
+        echo '<p>公開されている固定ページが見つかりませんでした。</p>';
+    }
+    
+    echo '</td>';
+    echo '</tr>';
+    echo '</table>';
+    echo '<p class="submit">';
+    echo '<input type="submit" name="save_page_settings" class="button button-primary" value="固定ページ設定を保存">';
+    echo '</p>';
+    echo '</form>';
+    
+    // 固定ページ順序変更用JavaScript
+    ?>
+    <script type="text/javascript">
+    jQuery(document).ready(function($) {
+        function updatePageOrder() {
+            var order = [];
+            $("#page-order-list .page-item").each(function() {
+                var pageId = $(this).data("page-id");
+                if (pageId) {
+                    order.push(pageId);
+                }
+            });
+            $("#page_order").val(order.join(","));
+            console.log("Page order updated:", order.join(","));
+        }
+        
+        function updatePageButtons() {
+            $("#page-order-list .page-item").each(function(index) {
+                var $item = $(this);
+                var totalItems = $("#page-order-list .page-item").length;
+                var isFirst = (index === 0);
+                var isLast = (index === totalItems - 1);
+                
+                $item.find(".page-move-up").prop("disabled", isFirst);
+                $item.find(".page-move-down").prop("disabled", isLast);
+                
+                // Update button styles
+                if (isFirst) {
+                    $item.find(".page-move-up").css("opacity", "0.3");
+                } else {
+                    $item.find(".page-move-up").css("opacity", "1");
+                }
+                
+                if (isLast) {
+                    $item.find(".page-move-down").css("opacity", "0.3");
+                } else {
+                    $item.find(".page-move-down").css("opacity", "1");
+                }
+            });
+        }
+        
+        // Up arrow button click event
+        $(document).on("click", ".page-move-up:not(:disabled)", function(e) {
+            e.preventDefault();
+            console.log("Page up arrow clicked");
+            
+            var $currentItem = $(this).closest(".page-item");
+            var $prevItem = $currentItem.prev(".page-item");
+            
+            if ($prevItem.length > 0) {
+                console.log("Moving page up:", $currentItem.data("page-id"));
+                $currentItem.insertBefore($prevItem);
+                updatePageOrder();
+                updatePageButtons();
+            }
+        });
+        
+        // Down arrow button click event
+        $(document).on("click", ".page-move-down:not(:disabled)", function(e) {
+            e.preventDefault();
+            console.log("Page down arrow clicked");
+            
+            var $currentItem = $(this).closest(".page-item");
+            var $nextItem = $currentItem.next(".page-item");
+            
+            if ($nextItem.length > 0) {
+                console.log("Moving page down:", $currentItem.data("page-id"));
+                $currentItem.insertAfter($nextItem);
+                updatePageOrder();
+                updatePageButtons();
+            }
+        });
+        
+        // Initialize
+        updatePageOrder();
+        updatePageButtons();
+        
+        // Debug info
+        console.log("Page arrow button functionality initialized");
+        console.log("Initial page order:", $("#page_order").val());
+    });
+    </script>
+    <?php
+    
+    echo '<hr>';
+    
     echo '<h2>LLMS.txt生成</h2>';
     echo '<p><strong>生成先:</strong><br>';
     $escaped_path = function_exists('esc_html') ? esc_html($file_path) : htmlspecialchars($file_path, ENT_QUOTES, 'UTF-8');
@@ -578,7 +865,22 @@ function llms_generator_page() {
         echo '有効な投稿タイプ: <strong>すべて</strong><br>';
     }
     if (!empty($post_type_order)) {
-        echo '出力順序: <strong>' . implode(' → ', $post_type_order) . '</strong>';
+        echo '出力順序: <strong>' . implode(' → ', $post_type_order) . '</strong><br>';
+    }
+    echo '固定ページ出力: <strong>' . ($pages_enabled ? '有効' : '無効') . '</strong>';
+    if ($pages_enabled && !empty($page_order)) {
+        $page_titles = array();
+        foreach ($page_order as $page_id) {
+            foreach ($available_pages as $page) {
+                if ($page->ID == $page_id) {
+                    $page_titles[] = $page->post_title;
+                    break;
+                }
+            }
+        }
+        if (!empty($page_titles)) {
+            echo '<br>固定ページ順序: <strong>' . implode(' → ', $page_titles) . '</strong>';
+        }
     }
     echo '</p>';
     
