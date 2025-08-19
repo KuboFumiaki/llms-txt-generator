@@ -52,6 +52,11 @@ function llms_txt_generator_activate() {
         add_option('llms_page_settings', array('enabled_pages' => $default_enabled_pages, 'order' => array()));
     }
     
+    // 初期化フラグを設定（初回インストール時のみ）
+    if (!get_option('llms_pages_initialized')) {
+        add_option('llms_pages_initialized', '1');
+    }
+    
     // 初回のLLMS.txtファイルを生成
     generate_llms_txt();
 }
@@ -125,10 +130,8 @@ function generate_llms_txt() {
             // enabled_pagesリストに含まれているページのみ出力
             $enabled_pages = isset($page_settings['enabled_pages']) ? $page_settings['enabled_pages'] : array();
             
-            // デフォルト（設定が空）の場合は全ページを出力
-            if (empty($enabled_pages)) {
-                $pages[] = $post;
-            } elseif (in_array($post->ID, $enabled_pages)) {
+            // チェックされたページのみ出力
+            if (!empty($enabled_pages) && in_array($post->ID, $enabled_pages)) {
                 $pages[] = $post;
             }
             continue;
@@ -795,8 +798,8 @@ function llms_generator_page() {
             }
             
             foreach ($child_pages as $page) {
-                // デフォルト（設定が空）の場合は全てチェック済み、設定がある場合はenabledリストをチェック
-                $checked = (empty($enabled_pages) || in_array($page->ID, $enabled_pages)) ? ' checked' : '';
+                // enabledリストに含まれている場合のみチェック済み
+                $checked = (!empty($enabled_pages) && in_array($page->ID, $enabled_pages)) ? ' checked' : '';
                 $indent = str_repeat('&nbsp;&nbsp;&nbsp;&nbsp;', $level);
                 echo '<label style="display: block; margin-bottom: 5px;">';
                 echo $indent;
@@ -826,8 +829,8 @@ function llms_generator_page() {
         // 有効な固定ページの順序設定
         $enabled_page_objects = array();
         foreach ($available_pages as $page) {
-            // デフォルト（設定が空）の場合は全て含む、設定がある場合はenabledリストに含まれるもののみ
-            if (empty($enabled_pages) || in_array($page->ID, $enabled_pages)) {
+            // enabledリストに含まれるもののみ
+            if (!empty($enabled_pages) && in_array($page->ID, $enabled_pages)) {
                 $enabled_page_objects[] = $page;
             }
         }
@@ -1057,7 +1060,7 @@ function llms_generator_page() {
         }
         echo '有効な固定ページ: <strong>' . implode(', ', $enabled_page_titles) . '</strong>';
     } else {
-        echo '有効な固定ページ: <strong>すべて</strong>';
+        echo '有効な固定ページ: <strong>なし</strong>';
     }
     
     if (!empty($page_order)) {
@@ -1065,7 +1068,7 @@ function llms_generator_page() {
         $output_page_titles = array();
         foreach ($page_order as $page_id) {
             // 有効なページのみ表示
-            if (empty($enabled_pages) || in_array($page_id, $enabled_pages)) {
+            if (!empty($enabled_pages) && in_array($page_id, $enabled_pages)) {
                 foreach ($available_pages as $page) {
                     if ($page->ID == $page_id) {
                         $output_page_titles[] = $page->post_title;
