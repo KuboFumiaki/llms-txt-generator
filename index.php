@@ -37,12 +37,7 @@ function llms_txt_generator_activate() {
     }
     
     if (!get_option('llms_page_settings')) {
-        add_option('llms_page_settings', array('enabled_pages' => array(), 'order' => array()));
-    }
-    
-    // 初回のLLMS.txtファイルを生成（WordPress完全初期化後に実行）
-    if (function_exists('wp_schedule_single_event')) {
-        wp_schedule_single_event(time() + 10, 'llms_generate_initial_file');
+        add_option('llms_page_settings', array('enabled' => false, 'order' => array()));
     }
 }
 
@@ -50,7 +45,6 @@ function llms_txt_generator_activate() {
 function llms_txt_generator_deactivate() {
     // 設定データは残すが、スケジュールされたイベントがあれば削除
     wp_clear_scheduled_hook('llms_txt_generate_cron');
-    wp_clear_scheduled_hook('llms_generate_initial_file');
 }
 
 // WordPress環境でのみフックを登録
@@ -88,10 +82,6 @@ function generate_llms_txt() {
         $content .= $custom_text . "\n\n";
     }
     
-    // $content .= "## サイト情報\n";
-    // $content .= "- サイト名: {$site_name}\n";
-    // $content .= "- URL: {$site_url}\n";
-    // $content .= "- 説明: {$site_description}\n";
     $content .= "# 最終更新: " . date('Y-m-d H:i:s') . "\n\n";
     
     // 投稿タイプの設定を取得
@@ -101,30 +91,7 @@ function generate_llms_txt() {
     
     // 固定ページの設定を取得
     $page_settings = get_option('llms_page_settings', array());
-    
-    // 旧設定との互換性を保つ
-    if (isset($page_settings['enabled']) && $page_settings['enabled'] === true && !isset($page_settings['enabled_pages'])) {
-        // 旧設定で全ページが有効だった場合、全ての親ページを有効にする
-        if (function_exists('get_posts')) {
-            $all_parent_pages = get_posts(array(
-                'post_type' => 'page',
-                'post_status' => 'publish',
-                'numberposts' => -1,
-                'post_parent' => 0
-            ));
-            $enabled_pages = array();
-            if ($all_parent_pages) {
-                foreach ($all_parent_pages as $page) {
-                    $enabled_pages[] = $page->ID;
-                }
-            }
-        } else {
-            $enabled_pages = array();
-        }
-    } else {
-        $enabled_pages = isset($page_settings['enabled_pages']) ? $page_settings['enabled_pages'] : array();
-    }
-    
+    $pages_enabled = isset($page_settings['enabled']) ? $page_settings['enabled'] : false;
     $page_order = isset($page_settings['order']) ? $page_settings['order'] : array();
     
     // 投稿タイプ別に記事を分類
@@ -136,34 +103,8 @@ function generate_llms_txt() {
         
         // 固定ページの処理
         if ($post_type === 'page') {
-            if (!empty($enabled_pages)) {
-                // 親ページIDを取得（0は最上位ページ）
-                $parent_id = $post->post_parent;
-                if ($parent_id == 0) {
-                    // 最上位の親ページのみチェック
-                    if (in_array($post->ID, $enabled_pages)) {
-                        $pages[] = $post;
-                    }
-                } else {
-                    // 子ページは最上位の祖先ページが有効な場合にのみ追加
-                    $root_parent_id = $post->ID;
-                    $current_post = $post;
-                    
-                    // 最上位の親ページを見つける
-                    while ($current_post->post_parent != 0) {
-                        $parent_post = get_post($current_post->post_parent);
-                        if ($parent_post) {
-                            $root_parent_id = $parent_post->ID;
-                            $current_post = $parent_post;
-                        } else {
-                            break;
-                        }
-                    }
-                    
-                    if (in_array($root_parent_id, $enabled_pages)) {
-                        $pages[] = $post;
-                    }
-                }
+            if ($pages_enabled) {
+                $pages[] = $post;
             }
             continue;
         }
@@ -197,106 +138,19 @@ function generate_llms_txt() {
     
     // 固定ページの処理（投稿よりも先に出力）
     if (!empty($pages)) {
-        // 親ページと子ページを分離
-        $parent_pages = array();
-        $child_pages = array();
+        $content .= "## 固定ページ\n";
         
         foreach ($pages as $page) {
-            if ($page->post_parent == 0) {
-                $parent_pages[] = $page;
-            } else {
-                if (!isset($child_pages[$page->post_parent])) {
-                    $child_pages[$page->post_parent] = array();
-                }
-                $child_pages[$page->post_parent][] = $page;
-            }
-        }
-        
-        // 親ページの順序設定
-        if (!empty($page_order)) {
-            $ordered_parent_pages = array();
-            $parent_pages_by_id = array();
-            
-            // 親ページをIDでインデックス化
-            foreach ($parent_pages as $page) {
-                $parent_pages_by_id[$page->ID] = $page;
-            }
-            
-            // 順序設定に従って並び替え
-            foreach ($page_order as $page_id) {
-                if (isset($parent_pages_by_id[$page_id])) {
-                    $ordered_parent_pages[] = $parent_pages_by_id[$page_id];
-                    unset($parent_pages_by_id[$page_id]);
-                }
-            }
-            
-            // 順序設定にない親ページを最後に追加
-            $parent_pages = array_merge($ordered_parent_pages, array_values($parent_pages_by_id));
-        }
-        
-        // 親ページごとに出力
-        foreach ($parent_pages as $parent_page) {
-            $content .= "## {$parent_page->post_title}\n";
-            
-            // 親ページ自体を出力
-            $page_url = get_permalink($parent_page->ID);
+            $page_url = get_permalink($page->ID);
+            // wp_trim_words関数が存在しない場合の代替処理
             if (function_exists('wp_trim_words')) {
-                $excerpt = wp_trim_words($parent_page->post_content, 15, '...');
+                $excerpt = wp_trim_words($page->post_content, 15, '...');
             } else {
-                $excerpt = mb_substr(strip_tags($parent_page->post_content), 0, 50) . '...';
+                $excerpt = mb_substr(strip_tags($page->post_content), 0, 50) . '...';
             }
-            $content .= "- [{$parent_page->post_title}]({$page_url}):{$excerpt}\n";
-            
-            // 子ページがある場合は出力（階層順に並び替え）
-            if (isset($child_pages[$parent_page->ID])) {
-                // 子ページをmenu_orderで並び替え
-                usort($child_pages[$parent_page->ID], function($a, $b) {
-                    if ($a->menu_order == $b->menu_order) {
-                        return strcmp($a->post_title, $b->post_title);
-                    }
-                    return ($a->menu_order < $b->menu_order) ? -1 : 1;
-                });
-                
-                foreach ($child_pages[$parent_page->ID] as $child_page) {
-                    $child_url = get_permalink($child_page->ID);
-                    if (function_exists('wp_trim_words')) {
-                        $child_excerpt = wp_trim_words($child_page->post_content, 15, '...');
-                    } else {
-                        $child_excerpt = mb_substr(strip_tags($child_page->post_content), 0, 50) . '...';
-                    }
-                    $content .= "  - [{$child_page->post_title}]({$child_url}):{$child_excerpt}\n";
-                    
-                    // 孫ページがある場合も出力
-                    $grandchild_pages = array();
-                    foreach ($pages as $page) {
-                        if ($page->post_parent == $child_page->ID) {
-                            $grandchild_pages[] = $page;
-                        }
-                    }
-                    
-                    if (!empty($grandchild_pages)) {
-                        // 孫ページもmenu_orderで並び替え
-                        usort($grandchild_pages, function($a, $b) {
-                            if ($a->menu_order == $b->menu_order) {
-                                return strcmp($a->post_title, $b->post_title);
-                            }
-                            return ($a->menu_order < $b->menu_order) ? -1 : 1;
-                        });
-                        
-                        foreach ($grandchild_pages as $grandchild_page) {
-                            $grandchild_url = get_permalink($grandchild_page->ID);
-                            if (function_exists('wp_trim_words')) {
-                                $grandchild_excerpt = wp_trim_words($grandchild_page->post_content, 15, '...');
-                            } else {
-                                $grandchild_excerpt = mb_substr(strip_tags($grandchild_page->post_content), 0, 50) . '...';
-                            }
-                            $content .= "    - [{$grandchild_page->post_title}]({$grandchild_url}):{$grandchild_excerpt}\n";
-                        }
-                    }
-                }
-            }
-            $content .= "\n";
+            $content .= "- [{$page->post_title}]({$page_url}):{$excerpt}\n";
         }
+        $content .= "\n";
     }
     
     // 投稿タイプ別に出力
@@ -396,9 +250,7 @@ function generate_llms_txt() {
 if (function_exists('add_action')) {
     add_action('publish_post', 'generate_llms_txt');
     add_action('post_updated', 'generate_llms_txt');
-    add_action('publish_page', 'generate_llms_txt'); // 固定ページ公開時
-    add_action('page_updated', 'generate_llms_txt'); // 固定ページ更新時（存在しない場合はpost_updatedで対応）
-    add_action('llms_generate_initial_file', 'generate_llms_txt'); // 初回生成用
+    add_action('publish_page', 'generate_llms_txt');
 }
 
 // 管理画面にLLMS.txt生成ボタンを追加（WordPress環境でのみ実行）
@@ -441,59 +293,14 @@ function llms_generator_page() {
         }
     }
     
-    // 文字コード設定の保存処理
-    if (isset($_POST['save_encoding']) && check_admin_referer('llms_encoding_action', 'llms_encoding_nonce')) {
-        if (function_exists('update_option')) {
-            $encoding = isset($_POST['llms_encoding']) && $_POST['llms_encoding'] === 'UTF-8' ? 'UTF-8' : 'SJIS';
-            update_option('llms_encoding', $encoding);
-            echo '<div class="notice notice-success"><p>文字コード設定が保存されました！</p></div>';
-        }
-    }
-    
-    // 投稿タイプ設定の保存処理
-    if (isset($_POST['save_post_types']) && check_admin_referer('llms_post_types_action', 'llms_post_types_nonce')) {
-        if (function_exists('update_option')) {
-            $enabled_post_types = isset($_POST['enabled_post_types']) ? array_map('sanitize_text_field', $_POST['enabled_post_types']) : array();
-            $post_type_order_raw = isset($_POST['post_type_order']) ? trim($_POST['post_type_order']) : '';
-                        
-            if (!empty($post_type_order_raw)) {
-                $post_type_order = array_map('sanitize_text_field', explode(',', $post_type_order_raw));
-                $post_type_order = array_filter($post_type_order); // 空の要素を除去
-            } else {
-                $post_type_order = array();
-            }
-                        
-            $post_type_settings = array(
-                'enabled' => $enabled_post_types,
-                'order' => $post_type_order
-            );
-            
-            $result = update_option('llms_post_type_settings', $post_type_settings);
-            
-            if ($result) {
-                echo '<div class="notice notice-success"><p>投稿タイプ設定が保存されました！</p></div>';
-            } else {
-                echo '<div class="notice notice-error"><p>投稿タイプ設定の保存に失敗しました。</p></div>';
-            }
-        }
-    }
-    
     // 固定ページ設定の保存処理
     if (isset($_POST['save_page_settings']) && check_admin_referer('llms_page_settings_action', 'llms_page_settings_nonce')) {
         if (function_exists('update_option')) {
-            $enabled_pages = isset($_POST['enabled_pages']) ? array_map('intval', $_POST['enabled_pages']) : array();
-            $page_order_raw = isset($_POST['page_order']) ? trim($_POST['page_order']) : '';
-            
-            if (!empty($page_order_raw)) {
-                $page_order = array_map('intval', explode(',', $page_order_raw));
-                $page_order = array_filter($page_order); // 空の要素を除去
-            } else {
-                $page_order = array();
-            }
+            $pages_enabled = isset($_POST['pages_enabled']) ? true : false;
             
             $page_settings = array(
-                'enabled_pages' => $enabled_pages,
-                'order' => $page_order
+                'enabled' => $pages_enabled,
+                'order' => array()
             );
             
             $result = update_option('llms_page_settings', $page_settings);
@@ -515,40 +322,8 @@ function llms_generator_page() {
     }
     
     $current_custom_text = get_option('llms_custom_text', '');
-    $current_encoding = get_option('llms_encoding', 'SJIS');
-    $post_type_settings = get_option('llms_post_type_settings', array());
-    $enabled_post_types = isset($post_type_settings['enabled']) ? $post_type_settings['enabled'] : array();
-    $post_type_order = isset($post_type_settings['order']) ? $post_type_settings['order'] : array();
-    
-    // 固定ページ設定を取得
     $page_settings = get_option('llms_page_settings', array());
-    $enabled_pages = isset($page_settings['enabled_pages']) ? $page_settings['enabled_pages'] : array();
-    $page_order = isset($page_settings['order']) ? $page_settings['order'] : array();
-    
-    // 利用可能な投稿タイプを取得（固定ページを除外）
-    $available_post_types = array();
-    if (function_exists('get_post_types')) {
-        $all_post_types = get_post_types(array('public' => true), 'objects');
-        foreach ($all_post_types as $post_type_key => $post_type_obj) {
-            if ($post_type_key !== 'page' && $post_type_key !== 'attachment') {
-                $available_post_types[$post_type_key] = $post_type_obj;
-            }
-        }
-    }
-    
-    // 利用可能な固定ページを取得（最上位の親ページのみ）
-    $available_pages = array();
-    if (function_exists('get_posts')) {
-        $all_pages = get_posts(array(
-            'post_type' => 'page',
-            'post_status' => 'publish',
-            'numberposts' => -1,
-            'post_parent' => 0, // 親ページIDが0（最上位）のもののみ
-            'orderby' => 'title',
-            'order' => 'ASC'
-        ));
-        $available_pages = $all_pages;
-    }
+    $pages_enabled = isset($page_settings['enabled']) ? $page_settings['enabled'] : false;
     
     echo '<div class="wrap">';
     echo '<h1>LLMs.txt Generator for WP</h1>';
@@ -575,327 +350,23 @@ function llms_generator_page() {
     
     echo '<hr>';
     
-    // 文字コード設定フォーム
-    echo '<h2>文字コード設定</h2>';
-    echo '<p>LLMS.txtファイルの文字コードを選択してください。</p>';
-    echo '<form method="post" style="margin-bottom: 30px;">';
-    wp_nonce_field('llms_encoding_action', 'llms_encoding_nonce');
-    echo '<table class="form-table">';
-    echo '<tr>';
-    echo '<th scope="row">ファイル文字コード</th>';
-    echo '<td>';
-    echo '<label>';
-    echo '<input type="radio" name="llms_encoding" value="UTF-8"' . ($current_encoding === 'UTF-8' ? ' checked' : '') . '>';
-    echo ' UTF-8';
-    echo '</label><br>';
-    echo '<label>';
-    echo '<input type="radio" name="llms_encoding" value="SJIS"' . ($current_encoding === 'SJIS' ? ' checked' : '') . '>';
-    echo ' Shift-JIS';
-    echo '</label>';
-    echo '<p class="description">ファイルを保存する際の文字コードを選択してください。デフォルトはShift-JISです。</p>';
-    echo '</td>';
-    echo '</tr>';
-    echo '</table>';
-    echo '<p class="submit">';
-    echo '<input type="submit" name="save_encoding" class="button button-primary" value="文字コード設定を保存">';
-    echo '</p>';
-    echo '</form>';
-    
-    echo '<hr>';
-    
-    // 投稿タイプ設定フォーム
-    echo '<h2>投稿タイプ設定</h2>';
-    echo '<p>LLMS.txtに出力する投稿タイプと順番を設定してください。</p>';
-    echo '<form method="post" style="margin-bottom: 30px;">';
-    wp_nonce_field('llms_post_types_action', 'llms_post_types_nonce');
-    echo '<table class="form-table">';
-    echo '<tr>';
-    echo '<th scope="row">出力する投稿タイプ</th>';
-    echo '<td>';
-    
-    if (!empty($available_post_types)) {
-        echo '<div style="margin-bottom: 20px;">';
-        echo '<p><strong>チェックした投稿タイプのみが出力されます：</strong></p>';
-        foreach ($available_post_types as $post_type_key => $post_type_obj) {
-            $checked = empty($enabled_post_types) || in_array($post_type_key, $enabled_post_types) ? ' checked' : '';
-            echo '<label style="display: block; margin-bottom: 5px;">';
-            echo '<input type="checkbox" name="enabled_post_types[]" value="' . esc_attr($post_type_key) . '"' . $checked . '>';
-            echo ' ' . esc_html($post_type_obj->labels->name) . ' (' . esc_html($post_type_key) . ')';
-            echo '</label>';
-        }
-        echo '</div>';
-        
-        echo '<div>';
-        echo '<p><strong>出力順序：</strong></p>';
-        echo '<p class="description">上下の矢印ボタンをクリックして順番を変更してください。</p>';
-        echo '<div id="post-type-order-list" style="border: 1px solid #ddd; padding: 15px; background: #f9f9f9; min-height: 120px;">';
-        
-        // 全ての投稿タイプをリストアップ（順序設定に基づいて）
-        $ordered_types = array();
-        if (!empty($post_type_order)) {
-            foreach ($post_type_order as $post_type_key) {
-                if (isset($available_post_types[$post_type_key])) {
-                    $ordered_types[] = $post_type_key;
-                }
-            }
-        }
-        
-        // 順序設定にない投稿タイプを最後に追加
-        foreach ($available_post_types as $post_type_key => $post_type_obj) {
-            if (!in_array($post_type_key, $ordered_types)) {
-                $ordered_types[] = $post_type_key;
-            }
-        }
-        
-        foreach ($ordered_types as $index => $post_type_key) {
-            if (isset($available_post_types[$post_type_key])) {
-                $post_type_obj = $available_post_types[$post_type_key];
-                $is_first = ($index === 0);
-                $is_last = ($index === count($ordered_types) - 1);
-                
-                echo '<div class="post-type-item" data-post-type="' . esc_attr($post_type_key) . '" style="display: flex; align-items: center; padding: 10px; margin: 8px 0; background: #fff; border: 1px solid #ccc; border-radius: 3px;">';
-                
-                // 投稿タイプ名
-                echo '<span style="flex: 1; font-weight: 500;">';
-                echo esc_html($post_type_obj->labels->name) . ' (' . esc_html($post_type_key) . ')';
-                echo '</span>';
-                
-                // 矢印ボタン
-                echo '<div style="margin-left: 10px;">';
-                
-                // 上矢印ボタン
-                $up_disabled = $is_first ? ' disabled' : '';
-                echo '<button type="button" class="move-up button button-small"' . $up_disabled . ' style="margin-right: 5px;" data-post-type="' . esc_attr($post_type_key) . '">';
-                echo '↑';
-                echo '</button>';
-                
-                // 下矢印ボタン
-                $down_disabled = $is_last ? ' disabled' : '';
-                echo '<button type="button" class="move-down button button-small"' . $down_disabled . ' data-post-type="' . esc_attr($post_type_key) . '">';
-                echo '↓';
-                echo '</button>';
-                
-                echo '</div>';
-                echo '</div>';
-            }
-        }
-        
-        echo '</div>';
-        echo '<input type="hidden" name="post_type_order" id="post_type_order" value="' . esc_attr(implode(',', $ordered_types)) . '">';
-        echo '</div>';
-    } else {
-        echo '<p>投稿タイプが見つかりませんでした。</p>';
-    }
-    
-    echo '</td>';
-    echo '</tr>';
-    echo '</table>';
-    echo '<p class="submit">';
-    echo '<input type="submit" name="save_post_types" class="button button-primary" value="投稿タイプ設定を保存">';
-    echo '</p>';
-    echo '</form>';
-    
-    // 上下矢印ボタン用JavaScript
-    ?>
-    <script type="text/javascript">
-    jQuery(document).ready(function($) {
-        function updateOrder() {
-            var order = [];
-            $("#post-type-order-list .post-type-item").each(function() {
-                var postType = $(this).data("post-type");
-                if (postType) {
-                    order.push(postType);
-                }
-            });
-            $("#post_type_order").val(order.join(","));
-            console.log("Order updated:", order.join(","));
-        }
-        
-        function updateButtons() {
-            $("#post-type-order-list .post-type-item").each(function(index) {
-                var $item = $(this);
-                var totalItems = $("#post-type-order-list .post-type-item").length;
-                var isFirst = (index === 0);
-                var isLast = (index === totalItems - 1);
-                
-                $item.find(".move-up").prop("disabled", isFirst);
-                $item.find(".move-down").prop("disabled", isLast);
-                
-                // Update button styles
-                if (isFirst) {
-                    $item.find(".move-up").css("opacity", "0.3");
-                } else {
-                    $item.find(".move-up").css("opacity", "1");
-                }
-                
-                if (isLast) {
-                    $item.find(".move-down").css("opacity", "0.3");
-                } else {
-                    $item.find(".move-down").css("opacity", "1");
-                }
-            });
-        }
-        
-        // Up arrow button click event
-        $(document).on("click", ".move-up:not(:disabled)", function(e) {
-            e.preventDefault();
-            console.log("Up arrow clicked");
-            
-            var $currentItem = $(this).closest(".post-type-item");
-            var $prevItem = $currentItem.prev(".post-type-item");
-            
-            if ($prevItem.length > 0) {
-                console.log("Moving up:", $currentItem.data("post-type"));
-                $currentItem.insertBefore($prevItem);
-                updateOrder();
-                updateButtons();
-            }
-        });
-        
-        // Down arrow button click event
-        $(document).on("click", ".move-down:not(:disabled)", function(e) {
-            e.preventDefault();
-            console.log("Down arrow clicked");
-            
-            var $currentItem = $(this).closest(".post-type-item");
-            var $nextItem = $currentItem.next(".post-type-item");
-            
-            if ($nextItem.length > 0) {
-                console.log("Moving down:", $currentItem.data("post-type"));
-                $currentItem.insertAfter($nextItem);
-                updateOrder();
-                updateButtons();
-            }
-        });
-        
-        // Initialize
-        updateOrder();
-        updateButtons();
-        
-        // Debug info
-        console.log("Arrow button functionality initialized");
-        console.log("Initial order:", $("#post_type_order").val());
-    });
-    </script>
-    <?php
-    
-    echo '<hr>';
-    
     // 固定ページ出力設定フォーム
     echo '<h2>固定ページ出力設定</h2>';
-    echo '<p>LLMS.txtに出力する最上位の親ページを選択してください。選択した親ページとその子ページが階層構造で出力されます。</p>';
+    echo '<p>LLMS.txtに固定ページを出力するかどうかを設定してください。</p>';
     echo '<form method="post" style="margin-bottom: 30px;">';
     wp_nonce_field('llms_page_settings_action', 'llms_page_settings_nonce');
     echo '<table class="form-table">';
     echo '<tr>';
-    echo '<th scope="row">出力する親ページ</th>';
+    echo '<th scope="row">固定ページの出力</th>';
     echo '<td>';
     
-    if (!empty($available_pages)) {
-        echo '<div style="margin-bottom: 20px;">';
-        echo '<p><strong>チェックした親ページとその子ページが出力されます：</strong></p>';
-        foreach ($available_pages as $page) {
-            $checked = in_array($page->ID, $enabled_pages) ? ' checked' : '';
-            echo '<label style="display: block; margin-bottom: 5px;">';
-            echo '<input type="checkbox" name="enabled_pages[]" value="' . esc_attr($page->ID) . '"' . $checked . '>';
-            echo ' ' . esc_html($page->post_title);
-            
-            // 子ページがあるかどうかを確認
-            if (function_exists('get_posts')) {
-                $child_pages = get_posts(array(
-                    'post_type' => 'page',
-                    'post_status' => 'publish',
-                    'post_parent' => $page->ID,
-                    'numberposts' => -1
-                ));
-                if (!empty($child_pages)) {
-                    echo ' <span style="color: #666;">(' . count($child_pages) . '個の子ページ)</span>';
-                }
-            }
-            echo '</label>';
-        }
-        echo '</div>';
-    
-    if (!empty($available_pages)) {
-        echo '<div>';
-        echo '<p><strong>出力順序：</strong></p>';
-        echo '<p class="description">上下の矢印ボタンをクリックして順番を変更してください。</p>';
-        echo '<div id="page-order-list" style="border: 1px solid #ddd; padding: 15px; background: #f9f9f9; min-height: 120px;">';
-        
-        // 有効な親ページの順序設定
-        $enabled_parent_pages = array();
-        foreach ($available_pages as $page) {
-            if (in_array($page->ID, $enabled_pages)) {
-                $enabled_parent_pages[] = $page;
-            }
-        }
-        
-        $ordered_pages = array();
-        if (!empty($page_order)) {
-            foreach ($page_order as $page_id) {
-                foreach ($enabled_parent_pages as $page) {
-                    if ($page->ID == $page_id) {
-                        $ordered_pages[] = $page;
-                        break;
-                    }
-                }
-            }
-        }
-        
-        // 順序設定にない有効な親ページを最後に追加
-        foreach ($enabled_parent_pages as $page) {
-            $already_ordered = false;
-            foreach ($ordered_pages as $ordered_page) {
-                if ($ordered_page->ID == $page->ID) {
-                    $already_ordered = true;
-                    break;
-                }
-            }
-            if (!$already_ordered) {
-                $ordered_pages[] = $page;
-            }
-        }
-        
-        foreach ($ordered_pages as $index => $page) {
-            $is_first = ($index === 0);
-            $is_last = ($index === count($ordered_pages) - 1);
-            
-            echo '<div class="page-item" data-page-id="' . esc_attr($page->ID) . '" style="display: flex; align-items: center; padding: 10px; margin: 8px 0; background: #fff; border: 1px solid #ccc; border-radius: 3px;">';
-            
-            // 固定ページタイトル
-            echo '<span style="flex: 1; font-weight: 500;">';
-            echo esc_html($page->post_title) . ' (ID: ' . esc_html($page->ID) . ')';
-            echo '</span>';
-            
-            // 矢印ボタン
-            echo '<div style="margin-left: 10px;">';
-            
-            // 上矢印ボタン
-            $up_disabled = $is_first ? ' disabled' : '';
-            echo '<button type="button" class="page-move-up button button-small"' . $up_disabled . ' style="margin-right: 5px;" data-page-id="' . esc_attr($page->ID) . '">';
-            echo '↑';
-            echo '</button>';
-            
-            // 下矢印ボタン
-            $down_disabled = $is_last ? ' disabled' : '';
-            echo '<button type="button" class="page-move-down button button-small"' . $down_disabled . ' data-page-id="' . esc_attr($page->ID) . '">';
-            echo '↓';
-            echo '</button>';
-            
-            echo '</div>';
-            echo '</div>';
-        }
-        
-        echo '</div>';
-        $page_order_string = array();
-        foreach ($ordered_pages as $page) {
-            $page_order_string[] = $page->ID;
-        }
-        echo '<input type="hidden" name="page_order" id="page_order" value="' . esc_attr(implode(',', $page_order_string)) . '">';
-        echo '</div>';
-    } else {
-        echo '<p>公開されている固定ページが見つかりませんでした。</p>';
-    }
+    echo '<div style="margin-bottom: 20px;">';
+    echo '<label>';
+    echo '<input type="checkbox" name="pages_enabled" value="1"' . ($pages_enabled ? ' checked' : '') . '>';
+    echo ' 固定ページをLLMS.txtに出力する';
+    echo '</label>';
+    echo '<p class="description">チェックを入れると、公開されている固定ページがLLMS.txtに含まれます。</p>';
+    echo '</div>';
     
     echo '</td>';
     echo '</tr>';
@@ -904,90 +375,6 @@ function llms_generator_page() {
     echo '<input type="submit" name="save_page_settings" class="button button-primary" value="固定ページ設定を保存">';
     echo '</p>';
     echo '</form>';
-    
-    // 固定ページ順序変更用JavaScript
-    ?>
-    <script type="text/javascript">
-    jQuery(document).ready(function($) {
-        function updatePageOrder() {
-            var order = [];
-            $("#page-order-list .page-item").each(function() {
-                var pageId = $(this).data("page-id");
-                if (pageId) {
-                    order.push(pageId);
-                }
-            });
-            $("#page_order").val(order.join(","));
-            console.log("Page order updated:", order.join(","));
-        }
-        
-        function updatePageButtons() {
-            $("#page-order-list .page-item").each(function(index) {
-                var $item = $(this);
-                var totalItems = $("#page-order-list .page-item").length;
-                var isFirst = (index === 0);
-                var isLast = (index === totalItems - 1);
-                
-                $item.find(".page-move-up").prop("disabled", isFirst);
-                $item.find(".page-move-down").prop("disabled", isLast);
-                
-                // Update button styles
-                if (isFirst) {
-                    $item.find(".page-move-up").css("opacity", "0.3");
-                } else {
-                    $item.find(".page-move-up").css("opacity", "1");
-                }
-                
-                if (isLast) {
-                    $item.find(".page-move-down").css("opacity", "0.3");
-                } else {
-                    $item.find(".page-move-down").css("opacity", "1");
-                }
-            });
-        }
-        
-        // Up arrow button click event
-        $(document).on("click", ".page-move-up:not(:disabled)", function(e) {
-            e.preventDefault();
-            console.log("Page up arrow clicked");
-            
-            var $currentItem = $(this).closest(".page-item");
-            var $prevItem = $currentItem.prev(".page-item");
-            
-            if ($prevItem.length > 0) {
-                console.log("Moving page up:", $currentItem.data("page-id"));
-                $currentItem.insertBefore($prevItem);
-                updatePageOrder();
-                updatePageButtons();
-            }
-        });
-        
-        // Down arrow button click event
-        $(document).on("click", ".page-move-down:not(:disabled)", function(e) {
-            e.preventDefault();
-            console.log("Page down arrow clicked");
-            
-            var $currentItem = $(this).closest(".page-item");
-            var $nextItem = $currentItem.next(".page-item");
-            
-            if ($nextItem.length > 0) {
-                console.log("Moving page down:", $currentItem.data("page-id"));
-                $currentItem.insertAfter($nextItem);
-                updatePageOrder();
-                updatePageButtons();
-            }
-        });
-        
-        // Initialize
-        updatePageOrder();
-        updatePageButtons();
-        
-        // Debug info
-        console.log("Page arrow button functionality initialized");
-        console.log("Initial page order:", $("#page_order").val());
-    });
-    </script>
-    <?php
     
     echo '<hr>';
     
@@ -1001,46 +388,7 @@ function llms_generator_page() {
     
     // 現在の設定表示
     echo '<p><strong>現在の設定:</strong><br>';
-    echo '文字コード: <strong>' . ($current_encoding === 'UTF-8' ? 'UTF-8' : 'Shift-JIS') . '</strong><br>';
-    if (!empty($enabled_post_types)) {
-        echo '有効な投稿タイプ: <strong>' . implode(', ', $enabled_post_types) . '</strong><br>';
-    } else {
-        echo '有効な投稿タイプ: <strong>すべて</strong><br>';
-    }
-    if (!empty($post_type_order)) {
-        echo '出力順序: <strong>' . implode(' → ', $post_type_order) . '</strong><br>';
-    }
-    if (!empty($enabled_pages)) {
-        $enabled_page_titles = array();
-        foreach ($enabled_pages as $page_id) {
-            foreach ($available_pages as $page) {
-                if ($page->ID == $page_id) {
-                    $enabled_page_titles[] = $page->post_title;
-                    break;
-                }
-            }
-        }
-        echo '有効な親ページ: <strong>' . implode(', ', $enabled_page_titles) . '</strong>';
-        
-        if (!empty($page_order)) {
-            $ordered_page_titles = array();
-            foreach ($page_order as $page_id) {
-                if (in_array($page_id, $enabled_pages)) {
-                    foreach ($available_pages as $page) {
-                        if ($page->ID == $page_id) {
-                            $ordered_page_titles[] = $page->post_title;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (!empty($ordered_page_titles)) {
-                echo '<br>親ページ出力順序: <strong>' . implode(' → ', $ordered_page_titles) . '</strong>';
-            }
-        }
-    } else {
-        echo '固定ページ出力: <strong>無効</strong>';
-    }
+    echo '固定ページ出力: <strong>' . ($pages_enabled ? '有効' : '無効') . '</strong>';
     echo '</p>';
     
     if (file_exists($file_path)) {
