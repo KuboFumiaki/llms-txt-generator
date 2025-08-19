@@ -37,7 +37,7 @@ function llms_txt_generator_activate() {
     }
     
     if (!get_option('llms_page_settings')) {
-        add_option('llms_page_settings', array('enabled_pages' => array(), 'order' => array()));
+        add_option('llms_page_settings', array('disabled_pages' => array(), 'order' => array()));
     }
     
     // 初回のLLMS.txtファイルを生成
@@ -98,7 +98,7 @@ function generate_llms_txt() {
     
     // 固定ページの設定を取得
     $page_settings = get_option('llms_page_settings', array());
-    $enabled_pages = isset($page_settings['enabled_pages']) ? $page_settings['enabled_pages'] : array();
+    $disabled_pages = isset($page_settings['disabled_pages']) ? $page_settings['disabled_pages'] : array();
     $page_order = isset($page_settings['order']) ? $page_settings['order'] : array();
     
     // 投稿タイプ別に記事を分類
@@ -108,16 +108,15 @@ function generate_llms_txt() {
     foreach ($all_posts as $post) {
         $post_type = get_post_type($post->ID);
         
-        // 固定ページの処理（個別設定）
+        // 固定ページの処理（デフォルト全出力）
         if ($post_type === 'page') {
-            // 設定で有効化された固定ページのみ追加
-            if (empty($enabled_pages)) {
-                // 設定が空の場合は何も出力しない
+            // disabled_pagesリストに含まれているページはスキップ
+            $disabled_pages = isset($page_settings['disabled_pages']) ? $page_settings['disabled_pages'] : array();
+            if (!empty($disabled_pages) && in_array($post->ID, $disabled_pages)) {
                 continue;
             }
-            if (in_array($post->ID, $enabled_pages)) {
-                $pages[] = $post;
-            }
+            // デフォルトで全ての固定ページを出力
+            $pages[] = $post;
             continue;
         }
         
@@ -453,7 +452,7 @@ function llms_generator_page() {
     // 固定ページ設定の保存処理
     if (isset($_POST['save_page_settings']) && check_admin_referer('llms_page_settings_action', 'llms_page_settings_nonce')) {
         if (function_exists('update_option')) {
-            $enabled_pages = isset($_POST['enabled_pages']) ? array_map('intval', $_POST['enabled_pages']) : array();
+            $disabled_pages = isset($_POST['disabled_pages']) ? array_map('intval', $_POST['disabled_pages']) : array();
             $page_order_raw = isset($_POST['page_order']) ? trim($_POST['page_order']) : '';
             
             if (!empty($page_order_raw)) {
@@ -464,7 +463,7 @@ function llms_generator_page() {
             }
             
             $page_settings = array(
-                'enabled_pages' => $enabled_pages,
+                'disabled_pages' => $disabled_pages,
                 'order' => $page_order
             );
             
@@ -494,7 +493,7 @@ function llms_generator_page() {
     
     // 固定ページ設定を取得
     $page_settings = get_option('llms_page_settings', array());
-    $enabled_pages = isset($page_settings['enabled_pages']) ? $page_settings['enabled_pages'] : array();
+    $disabled_pages = isset($page_settings['disabled_pages']) ? $page_settings['disabled_pages'] : array();
     $page_order = isset($page_settings['order']) ? $page_settings['order'] : array();
     
     // 利用可能な投稿タイプを取得（固定ページを除外）
@@ -754,26 +753,26 @@ function llms_generator_page() {
     
     // 固定ページ出力設定フォーム
     echo '<h2>固定ページ出力設定</h2>';
-    echo '<p>LLMS.txtに出力する固定ページを個別に選択してください。</p>';
+    echo '<p>固定ページはデフォルトで全て出力されます。出力したくない固定ページがある場合のみチェックしてください。</p>';
     echo '<form method="post" style="margin-bottom: 30px;">';
     wp_nonce_field('llms_page_settings_action', 'llms_page_settings_nonce');
     echo '<table class="form-table">';
     echo '<tr>';
-    echo '<th scope="row">出力する固定ページ</th>';
+    echo '<th scope="row">出力しない固定ページ</th>';
     echo '<td>';
     
     if (!empty($available_pages)) {
         echo '<div style="margin-bottom: 20px;">';
-        echo '<p><strong>チェックした固定ページが出力されます：</strong></p>';
+        echo '<p><strong>チェックした固定ページは出力されません：</strong></p>';
         
         // 一括選択ボタン
         echo '<div style="margin-bottom: 15px; padding: 10px; background: #f0f0f1; border-radius: 3px;">';
-        echo '<button type="button" id="check-all-pages" class="button button-secondary" style="margin-right: 10px;">すべて選択</button>';
-        echo '<button type="button" id="uncheck-all-pages" class="button button-secondary">すべて解除</button>';
+        echo '<button type="button" id="check-all-pages" class="button button-secondary" style="margin-right: 10px;">すべて無効化</button>';
+        echo '<button type="button" id="uncheck-all-pages" class="button button-secondary">すべて有効化</button>';
         echo '</div>';
         
         // 階層構造でページを表示する関数
-        function display_page_tree($pages, $enabled_pages, $parent_id = 0, $level = 0) {
+        function display_page_tree($pages, $disabled_pages, $parent_id = 0, $level = 0) {
             $child_pages = array();
             foreach ($pages as $page) {
                 if ($page->post_parent == $parent_id) {
@@ -782,11 +781,11 @@ function llms_generator_page() {
             }
             
             foreach ($child_pages as $page) {
-                $checked = in_array($page->ID, $enabled_pages) ? ' checked' : '';
+                $checked = in_array($page->ID, $disabled_pages) ? ' checked' : '';
                 $indent = str_repeat('&nbsp;&nbsp;&nbsp;&nbsp;', $level);
                 echo '<label style="display: block; margin-bottom: 5px;">';
                 echo $indent;
-                echo '<input type="checkbox" name="enabled_pages[]" value="' . esc_attr($page->ID) . '"' . $checked . '>';
+                echo '<input type="checkbox" name="disabled_pages[]" value="' . esc_attr($page->ID) . '"' . $checked . '>';
                 echo ' ' . esc_html($page->post_title);
                 if ($level == 0) {
                     echo ' <span style="color: #999; font-size: 12px;">(親ページ)</span>';
@@ -796,23 +795,23 @@ function llms_generator_page() {
                 echo '</label>';
                 
                 // 再帰的に子ページを表示
-                display_page_tree($pages, $enabled_pages, $page->ID, $level + 1);
+                display_page_tree($pages, $disabled_pages, $page->ID, $level + 1);
             }
         }
         
-        display_page_tree($available_pages, $enabled_pages);
+        display_page_tree($available_pages, $disabled_pages);
         echo '</div>';
     
     if (!empty($available_pages)) {
         echo '<div>';
         echo '<p><strong>出力順序：</strong></p>';
-        echo '<p class="description">上下の矢印ボタンをクリックして順番を変更してください。選択した固定ページのみが表示されます。</p>';
+        echo '<p class="description">上下の矢印ボタンをクリックして順番を変更してください。出力される固定ページのみが表示されます。</p>';
         echo '<div id="page-order-list" style="border: 1px solid #ddd; padding: 15px; background: #f9f9f9; min-height: 120px;">';
         
-        // 有効な固定ページの順序設定
+        // 出力対象の固定ページの順序設定（無効化されていないページ）
         $enabled_page_objects = array();
         foreach ($available_pages as $page) {
-            if (in_array($page->ID, $enabled_pages)) {
+            if (!in_array($page->ID, $disabled_pages)) {
                 $enabled_page_objects[] = $page;
             }
         }
@@ -907,18 +906,18 @@ function llms_generator_page() {
     ?>
     <script type="text/javascript">
     jQuery(document).ready(function($) {
-        // すべて選択ボタン
+        // すべて無効化ボタン
         $("#check-all-pages").click(function(e) {
             e.preventDefault();
-            $('input[name="enabled_pages[]"]').prop('checked', true);
-            console.log("All pages checked");
+            $('input[name="disabled_pages[]"]').prop('checked', true);
+            console.log("All pages disabled");
         });
         
-        // すべて解除ボタン
+        // すべて有効化ボタン
         $("#uncheck-all-pages").click(function(e) {
             e.preventDefault();
-            $('input[name="enabled_pages[]"]').prop('checked', false);
-            console.log("All pages unchecked");
+            $('input[name="disabled_pages[]"]').prop('checked', false);
+            console.log("All pages enabled");
         });
     });
     </script>
@@ -1030,36 +1029,39 @@ function llms_generator_page() {
     if (!empty($post_type_order)) {
         echo '出力順序: <strong>' . implode(' → ', $post_type_order) . '</strong><br>';
     }
-    if (!empty($enabled_pages)) {
-        $enabled_page_titles = array();
-        foreach ($enabled_pages as $page_id) {
+    if (!empty($disabled_pages)) {
+        $disabled_page_titles = array();
+        foreach ($disabled_pages as $page_id) {
             foreach ($available_pages as $page) {
                 if ($page->ID == $page_id) {
-                    $enabled_page_titles[] = $page->post_title;
+                    $disabled_page_titles[] = $page->post_title;
                     break;
                 }
             }
         }
-        echo '有効な固定ページ: <strong>' . implode(', ', $enabled_page_titles) . '</strong>';
-        
-        if (!empty($page_order)) {
-            $ordered_page_titles = array();
-            foreach ($page_order as $page_id) {
-                if (in_array($page_id, $enabled_pages)) {
-                    foreach ($available_pages as $page) {
-                        if ($page->ID == $page_id) {
-                            $ordered_page_titles[] = $page->post_title;
-                            break;
-                        }
+        echo '無効化された固定ページ: <strong>' . implode(', ', $disabled_page_titles) . '</strong><br>';
+        echo '固定ページ出力: <strong>選択されたページ以外の全ページを出力</strong>';
+    } else {
+        echo '固定ページ出力: <strong>全ページを出力</strong>';
+    }
+    
+    if (!empty($page_order)) {
+        // 出力されるページのタイトルを順序設定に従って表示
+        $output_page_titles = array();
+        foreach ($page_order as $page_id) {
+            // 無効化されていないページのみ表示
+            if (!in_array($page_id, $disabled_pages)) {
+                foreach ($available_pages as $page) {
+                    if ($page->ID == $page_id) {
+                        $output_page_titles[] = $page->post_title;
+                        break;
                     }
                 }
             }
-            if (!empty($ordered_page_titles)) {
-                echo '<br>固定ページ出力順序: <strong>' . implode(' → ', $ordered_page_titles) . '</strong>';
-            }
         }
-    } else {
-        echo '固定ページ出力: <strong>無効</strong>';
+        if (!empty($output_page_titles)) {
+            echo '<br>固定ページ出力順序: <strong>' . implode(' → ', $output_page_titles) . '</strong>';
+        }
     }
     echo '</p>';
     
