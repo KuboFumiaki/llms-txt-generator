@@ -245,7 +245,7 @@ function generate_llms_txt() {
                     if ($a->menu_order == $b->menu_order) {
                         return strcmp($a->post_title, $b->post_title);
                     }
-                    return $a->menu_order <=> $b->menu_order;
+                    return ($a->menu_order < $b->menu_order) ? -1 : 1;
                 });
                 
                 foreach ($child_pages[$parent_page->ID] as $child_page) {
@@ -271,7 +271,7 @@ function generate_llms_txt() {
                             if ($a->menu_order == $b->menu_order) {
                                 return strcmp($a->post_title, $b->post_title);
                             }
-                            return $a->menu_order <=> $b->menu_order;
+                            return ($a->menu_order < $b->menu_order) ? -1 : 1;
                         });
                         
                         foreach ($grandchild_pages as $grandchild_page) {

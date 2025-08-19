@@ -22,6 +22,7 @@ if (!function_exists('delete_option') || !function_exists('wp_clear_scheduled_ho
 delete_option('llms_custom_text');
 delete_option('llms_encoding');
 delete_option('llms_post_type_settings');
+delete_option('llms_page_settings');
 
 // 生成されたLLMS.txtファイルを削除
 $file_path = ABSPATH . 'llms.txt';
