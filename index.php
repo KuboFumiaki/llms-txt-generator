@@ -494,16 +494,104 @@ function llms_handle_page_status_change($new_status, $old_status, $post) {
     }
 }
 
+// 投稿記事保存時の処理関数
+function llms_handle_post_save($post_id, $post, $update) {
+    // 固定ページは別の関数で処理
+    if ($post->post_type === 'page') {
+        return;
+    }
+    
+    // 自動保存、リビジョンはスキップ
+    if (wp_is_post_autosave($post_id) || wp_is_post_revision($post_id)) {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: Skipped post - autosave or revision (ID: {$post_id})");
+        }
+        return;
+    }
+    
+    // 公開状態の投稿のみ処理
+    if ($post->post_status !== 'publish') {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: Skipped post - not published (ID: {$post_id}, Status: {$post->post_status})");
+        }
+        return;
+    }
+    
+    // デバッグ用ログ
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        $action = $update ? 'updated' : 'created';
+        error_log("LLMS: Post {$action} - ID {$post_id}, Type: {$post->post_type}, Title: {$post->post_title}");
+    }
+    
+    // LLMS.txtを生成
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log("LLMS: Generating LLMS.txt for post change...");
+    }
+    
+    $generation_result = generate_llms_txt();
+    
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log("LLMS: LLMS.txt generation result for post: " . ($generation_result ? 'success' : 'failed'));
+    }
+}
+
+// 投稿記事のステータス変更時の処理関数
+function llms_handle_post_status_change($new_status, $old_status, $post) {
+    // 固定ページは別の関数で処理
+    if ($post->post_type === 'page') {
+        return;
+    }
+    
+    // 公開に関わる変更の場合のみ処理
+    if ($new_status === 'publish' || $old_status === 'publish') {
+        // デバッグ用ログ
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: Post status changed from {$old_status} to {$new_status} - ID {$post->ID}, Type: {$post->post_type}, Title: {$post->post_title}");
+        }
+        
+        // LLMS.txtを生成
+        $generation_result = generate_llms_txt();
+        
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: LLMS.txt generation result for post status change: " . ($generation_result ? 'success' : 'failed'));
+        }
+    }
+}
+
+// 投稿・固定ページ削除時の処理関数
+function llms_handle_post_delete($post_id) {
+    $post = get_post($post_id);
+    if (!$post) {
+        return;
+    }
+    
+    // デバッグ用ログ
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log("LLMS: Post/Page deleted - ID {$post_id}, Type: {$post->post_type}, Title: {$post->post_title}");
+    }
+    
+    // LLMS.txtを生成
+    $generation_result = generate_llms_txt();
+    
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log("LLMS: LLMS.txt generation result for deletion: " . ($generation_result ? 'success' : 'failed'));
+    }
+}
+
 // 記事公開・更新時にLLMS.txtを生成（WordPress環境でのみ実行）
 if (function_exists('add_action')) {
-    // 投稿関連
-    add_action('publish_post', 'generate_llms_txt');
+    // 投稿記事関連 - 保存時フック（新規作成・更新両方をカバー）
+    add_action('save_post', 'llms_handle_post_save', 10, 3);
     
     // 固定ページ関連 - 保存時フック（新規作成・更新両方をカバー）
     add_action('save_post', 'llms_handle_page_save', 10, 3);
     
     // ステータス変更時（下書き→公開、公開→下書きなど）
     add_action('transition_post_status', 'llms_handle_page_status_change', 10, 3);
+    add_action('transition_post_status', 'llms_handle_post_status_change', 10, 3);
+    
+    // 投稿・固定ページ削除時
+    add_action('delete_post', 'llms_handle_post_delete');
 }
 
 // 管理画面にLLMS.txt生成ボタンを追加（WordPress環境でのみ実行）
