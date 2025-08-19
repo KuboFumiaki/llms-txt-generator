@@ -26,7 +26,7 @@ delete_option('llms_post_type_settings');
 // 生成されたLLMS.txtファイルを削除
 $file_path = ABSPATH . 'llms.txt';
 if (file_exists($file_path)) {
-    unlink($file_path);
+    wp_delete_file($file_path);
 }
 
 // スケジュールされたイベントがあれば削除（将来の機能拡張用）
@@ -38,7 +38,7 @@ $temp_files = glob($upload_dir['basedir'] . '/llms-txt-*');
 if ($temp_files) {
     foreach ($temp_files as $temp_file) {
         if (is_file($temp_file)) {
-            unlink($temp_file);
+            wp_delete_file($temp_file);
         }
     }
 }
