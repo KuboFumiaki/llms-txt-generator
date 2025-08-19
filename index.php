@@ -37,7 +37,24 @@ function llms_txt_generator_activate() {
     }
     
     if (!get_option('llms_page_settings')) {
-        add_option('llms_page_settings', array('enabled_pages' => array(), 'order' => array()));
+        // 全ての固定ページをデフォルトで有効にする
+        $all_pages = get_posts(array(
+            'post_type' => 'page',
+            'post_status' => 'publish',
+            'numberposts' => -1
+        ));
+        $default_enabled_pages = array();
+        if (!empty($all_pages)) {
+            foreach ($all_pages as $page) {
+                $default_enabled_pages[] = $page->ID;
+            }
+        }
+        add_option('llms_page_settings', array('enabled_pages' => $default_enabled_pages, 'order' => array()));
+    }
+    
+    // 初期化フラグを設定（初回インストール時のみ）
+    if (!get_option('llms_pages_initialized')) {
+        add_option('llms_pages_initialized', '1');
     }
     
     // 初回のLLMS.txtファイルを生成
@@ -108,20 +125,14 @@ function generate_llms_txt() {
     foreach ($all_posts as $post) {
         $post_type = get_post_type($post->ID);
         
-        // 固定ページの処理
+        // 固定ページの処理（選択されたもののみ出力）
         if ($post_type === 'page') {
-            // 親ページIDを取得（0は最上位ページ）
-            $parent_id = $post->post_parent;
-            if ($parent_id == 0) {
-                // 最上位の親ページのみチェック
-                if (!empty($enabled_pages) && in_array($post->ID, $enabled_pages)) {
-                    $pages[] = $post;
-                }
-            } else {
-                // 子ページは親ページが有効な場合にのみ追加
-                if (!empty($enabled_pages) && in_array($parent_id, $enabled_pages)) {
-                    $pages[] = $post;
-                }
+            // enabled_pagesリストに含まれているページのみ出力
+            $enabled_pages = isset($page_settings['enabled_pages']) ? $page_settings['enabled_pages'] : array();
+            
+            // チェックされたページのみ出力
+            if (!empty($enabled_pages) && in_array($post->ID, $enabled_pages)) {
+                $pages[] = $post;
             }
             continue;
         }
@@ -155,48 +166,68 @@ function generate_llms_txt() {
     
     // 固定ページの処理（投稿よりも先に出力）
     if (!empty($pages)) {
+        $content .= "## 固定ページ\n";
+        
+        // ページをIDでインデックス化
+        $pages_by_id = array();
+        foreach ($pages as $page) {
+            $pages_by_id[$page->ID] = $page;
+        }
+        
         // 親ページと子ページを分離
         $parent_pages = array();
-        $child_pages = array();
+        $child_pages_by_parent = array();
         
         foreach ($pages as $page) {
             if ($page->post_parent == 0) {
+                // 親ページ
                 $parent_pages[] = $page;
             } else {
-                if (!isset($child_pages[$page->post_parent])) {
-                    $child_pages[$page->post_parent] = array();
+                // 子ページ
+                if (!isset($child_pages_by_parent[$page->post_parent])) {
+                    $child_pages_by_parent[$page->post_parent] = array();
                 }
-                $child_pages[$page->post_parent][] = $page;
+                $child_pages_by_parent[$page->post_parent][] = $page;
             }
         }
         
-        // 親ページの順序設定
+        // 親ページの順序設定に従って並び替え
+        $ordered_parent_pages = array();
+        $parent_pages_by_id = array();
+        
+        foreach ($parent_pages as $page) {
+            $parent_pages_by_id[$page->ID] = $page;
+        }
+        
+        // 順序設定に従って親ページを並び替え
         if (!empty($page_order)) {
-            $ordered_parent_pages = array();
-            $parent_pages_by_id = array();
-            
-            // 親ページをIDでインデックス化
-            foreach ($parent_pages as $page) {
-                $parent_pages_by_id[$page->ID] = $page;
-            }
-            
-            // 順序設定に従って並び替え
             foreach ($page_order as $page_id) {
                 if (isset($parent_pages_by_id[$page_id])) {
                     $ordered_parent_pages[] = $parent_pages_by_id[$page_id];
                     unset($parent_pages_by_id[$page_id]);
                 }
             }
-            
-            // 順序設定にない親ページを最後に追加
-            $parent_pages = array_merge($ordered_parent_pages, array_values($parent_pages_by_id));
         }
         
-        // 親ページごとに出力
-        foreach ($parent_pages as $parent_page) {
-            $content .= "## {$parent_page->post_title}\n";
-            
-            // 親ページ自体を出力
+        // 順序設定にない親ページを最後に追加
+        $ordered_parent_pages = array_merge($ordered_parent_pages, array_values($parent_pages_by_id));
+        
+        // 順序設定にない子ページも追加（親ページがない子ページ）
+        $orphan_child_pages = array();
+        if (!empty($page_order)) {
+            foreach ($page_order as $page_id) {
+                if (isset($pages_by_id[$page_id]) && $pages_by_id[$page_id]->post_parent != 0) {
+                    // 親ページが選択されていない子ページを個別に出力
+                    if (!isset($parent_pages_by_id[$pages_by_id[$page_id]->post_parent]) && 
+                        !in_array($pages_by_id[$page_id], $orphan_child_pages)) {
+                        $orphan_child_pages[] = $pages_by_id[$page_id];
+                    }
+                }
+            }
+        }
+        
+        // 親ページとその子ページを階層構造で出力
+        foreach ($ordered_parent_pages as $parent_page) {
             $page_url = get_permalink($parent_page->ID);
             if (function_exists('wp_trim_words')) {
                 $excerpt = wp_trim_words($parent_page->post_content, 15, '...');
@@ -205,9 +236,33 @@ function generate_llms_txt() {
             }
             $content .= "- [{$parent_page->post_title}]({$page_url}):{$excerpt}\n";
             
-            // 子ページがある場合は出力
-            if (isset($child_pages[$parent_page->ID])) {
-                foreach ($child_pages[$parent_page->ID] as $child_page) {
+            // この親ページの子ページがあれば出力
+            if (isset($child_pages_by_parent[$parent_page->ID])) {
+                $child_pages = $child_pages_by_parent[$parent_page->ID];
+                
+                // 子ページの順序設定
+                $ordered_child_pages = array();
+                $child_pages_by_id = array();
+                
+                foreach ($child_pages as $child_page) {
+                    $child_pages_by_id[$child_page->ID] = $child_page;
+                }
+                
+                // 順序設定に従って子ページを並び替え
+                if (!empty($page_order)) {
+                    foreach ($page_order as $page_id) {
+                        if (isset($child_pages_by_id[$page_id])) {
+                            $ordered_child_pages[] = $child_pages_by_id[$page_id];
+                            unset($child_pages_by_id[$page_id]);
+                        }
+                    }
+                }
+                
+                // 順序設定にない子ページを最後に追加
+                $ordered_child_pages = array_merge($ordered_child_pages, array_values($child_pages_by_id));
+                
+                // 子ページを出力
+                foreach ($ordered_child_pages as $child_page) {
                     $child_url = get_permalink($child_page->ID);
                     if (function_exists('wp_trim_words')) {
                         $child_excerpt = wp_trim_words($child_page->post_content, 15, '...');
@@ -217,8 +272,20 @@ function generate_llms_txt() {
                     $content .= "  - [{$child_page->post_title}]({$child_url}):{$child_excerpt}\n";
                 }
             }
-            $content .= "\n";
         }
+        
+        // 親ページが選択されていない独立した子ページを出力
+        foreach ($orphan_child_pages as $orphan_page) {
+            $page_url = get_permalink($orphan_page->ID);
+            if (function_exists('wp_trim_words')) {
+                $excerpt = wp_trim_words($orphan_page->post_content, 15, '...');
+            } else {
+                $excerpt = mb_substr(strip_tags($orphan_page->post_content), 0, 50) . '...';
+            }
+            $content .= "- [{$orphan_page->post_title}]({$page_url}):{$excerpt}\n";
+        }
+        
+        $content .= "\n";
     }
     
     // 投稿タイプ別に出力
@@ -314,12 +381,217 @@ function generate_llms_txt() {
     return true;
 }
 
+// 固定ページ保存時の統合処理関数
+// デバッグ有効化: wp-config.phpに define('WP_DEBUG', true); を追加
+function llms_handle_page_save($post_id, $post, $update) {
+    // デバッグ用ログ
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log("LLMS: llms_handle_page_save called - ID {$post_id}, Type: {$post->post_type}, Status: {$post->post_status}, Update: " . ($update ? 'true' : 'false'));
+    }
+    
+    // 固定ページ以外はスキップ
+    if ($post->post_type !== 'page') {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: Skipped - not a page (type: {$post->post_type})");
+        }
+        return;
+    }
+    
+    // 自動保存、リビジョンはスキップ
+    if (wp_is_post_autosave($post_id) || wp_is_post_revision($post_id)) {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: Skipped - autosave or revision");
+        }
+        return;
+    }
+    
+    // 公開状態のページのみ処理
+    if ($post->post_status !== 'publish') {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: Skipped - not published (status: {$post->post_status})");
+        }
+        return;
+    }
+    
+    // WordPress関数が利用可能かチェック
+    if (!function_exists('get_option') || !function_exists('update_option')) {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: Skipped - WordPress functions not available");
+        }
+        return;
+    }
+    
+    // 現在の設定を取得
+    $page_settings = get_option('llms_page_settings', array());
+    $enabled_pages = isset($page_settings['enabled_pages']) ? $page_settings['enabled_pages'] : array();
+    $page_order = isset($page_settings['order']) ? $page_settings['order'] : array();
+    
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log("LLMS: Current enabled pages: " . implode(',', $enabled_pages));
+        error_log("LLMS: Current page order: " . implode(',', $page_order));
+    }
+    
+    // 有効化リストに含まれていない場合は新規作成として自動で有効化
+    if (!in_array($post_id, $enabled_pages)) {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: Page not in enabled list - treating as new page and auto-enabling");
+        }
+        
+        // 有効化リストに追加
+        $enabled_pages[] = $post_id;
+        
+        // 順序設定の先頭に追加
+        array_unshift($page_order, $post_id);
+        
+        // 設定を更新
+        $page_settings['enabled_pages'] = $enabled_pages;
+        $page_settings['order'] = $page_order;
+        $result = update_option('llms_page_settings', $page_settings);
+        
+        // デバッグ用ログ
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: Auto-enabled page ID {$post_id} - {$post->post_title}");
+            error_log("LLMS: Settings update result: " . ($result ? 'success' : 'failed'));
+            error_log("LLMS: New enabled pages: " . implode(',', $enabled_pages));
+        }
+    } else {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: Page {$post_id} already in enabled list - no auto-enable needed");
+        }
+    }
+    
+    // LLMS.txtを生成
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log("LLMS: Generating LLMS.txt...");
+    }
+    
+    $generation_result = generate_llms_txt();
+    
+    // デバッグ用ログ
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        $action = $update ? 'updated' : 'created';
+        error_log("LLMS: Page {$action} - ID {$post_id} - {$post->post_title}");
+        error_log("LLMS: LLMS.txt generation result: " . ($generation_result ? 'success' : 'failed'));
+    }
+}
+
+// 固定ページのステータス変更時にLLMS.txtを生成する関数
+function llms_handle_page_status_change($new_status, $old_status, $post) {
+    // 固定ページ以外はスキップ
+    if ($post->post_type !== 'page') {
+        return;
+    }
+    
+    // 公開に関わる変更の場合のみ処理
+    if ($new_status === 'publish' || $old_status === 'publish') {
+        // LLMS.txtを生成
+        generate_llms_txt();
+        
+        // デバッグ用ログ
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: Page status changed from {$old_status} to {$new_status} - ID {$post->ID} - {$post->post_title}");
+        }
+    }
+}
+
+// 投稿記事保存時の処理関数
+function llms_handle_post_save($post_id, $post, $update) {
+    // 固定ページは別の関数で処理
+    if ($post->post_type === 'page') {
+        return;
+    }
+    
+    // 自動保存、リビジョンはスキップ
+    if (wp_is_post_autosave($post_id) || wp_is_post_revision($post_id)) {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: Skipped post - autosave or revision (ID: {$post_id})");
+        }
+        return;
+    }
+    
+    // 公開状態の投稿のみ処理
+    if ($post->post_status !== 'publish') {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: Skipped post - not published (ID: {$post_id}, Status: {$post->post_status})");
+        }
+        return;
+    }
+    
+    // デバッグ用ログ
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        $action = $update ? 'updated' : 'created';
+        error_log("LLMS: Post {$action} - ID {$post_id}, Type: {$post->post_type}, Title: {$post->post_title}");
+    }
+    
+    // LLMS.txtを生成
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log("LLMS: Generating LLMS.txt for post change...");
+    }
+    
+    $generation_result = generate_llms_txt();
+    
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log("LLMS: LLMS.txt generation result for post: " . ($generation_result ? 'success' : 'failed'));
+    }
+}
+
+// 投稿記事のステータス変更時の処理関数
+function llms_handle_post_status_change($new_status, $old_status, $post) {
+    // 固定ページは別の関数で処理
+    if ($post->post_type === 'page') {
+        return;
+    }
+    
+    // 公開に関わる変更の場合のみ処理
+    if ($new_status === 'publish' || $old_status === 'publish') {
+        // デバッグ用ログ
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: Post status changed from {$old_status} to {$new_status} - ID {$post->ID}, Type: {$post->post_type}, Title: {$post->post_title}");
+        }
+        
+        // LLMS.txtを生成
+        $generation_result = generate_llms_txt();
+        
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: LLMS.txt generation result for post status change: " . ($generation_result ? 'success' : 'failed'));
+        }
+    }
+}
+
+// 投稿・固定ページ削除時の処理関数
+function llms_handle_post_delete($post_id) {
+    $post = get_post($post_id);
+    if (!$post) {
+        return;
+    }
+    
+    // デバッグ用ログ
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log("LLMS: Post/Page deleted - ID {$post_id}, Type: {$post->post_type}, Title: {$post->post_title}");
+    }
+    
+    // LLMS.txtを生成
+    $generation_result = generate_llms_txt();
+    
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log("LLMS: LLMS.txt generation result for deletion: " . ($generation_result ? 'success' : 'failed'));
+    }
+}
+
 // 記事公開・更新時にLLMS.txtを生成（WordPress環境でのみ実行）
 if (function_exists('add_action')) {
-    add_action('publish_post', 'generate_llms_txt');
-    add_action('post_updated', 'generate_llms_txt');
-    add_action('publish_page', 'generate_llms_txt'); // 固定ページ公開時
-    add_action('page_updated', 'generate_llms_txt'); // 固定ページ更新時（存在しない場合はpost_updatedで対応）
+    // 投稿記事関連 - 保存時フック（新規作成・更新両方をカバー）
+    add_action('save_post', 'llms_handle_post_save', 10, 3);
+    
+    // 固定ページ関連 - 保存時フック（新規作成・更新両方をカバー）
+    add_action('save_post', 'llms_handle_page_save', 10, 3);
+    
+    // ステータス変更時（下書き→公開、公開→下書きなど）
+    add_action('transition_post_status', 'llms_handle_page_status_change', 10, 3);
+    add_action('transition_post_status', 'llms_handle_post_status_change', 10, 3);
+    
+    // 投稿・固定ページ削除時
+    add_action('delete_post', 'llms_handle_post_delete');
 }
 
 // 管理画面にLLMS.txt生成ボタンを追加（WordPress環境でのみ実行）
@@ -457,15 +729,14 @@ function llms_generator_page() {
         }
     }
     
-    // 利用可能な固定ページを取得（最上位の親ページのみ）
+    // 利用可能な固定ページを取得（すべての固定ページ）
     $available_pages = array();
     if (function_exists('get_posts')) {
         $all_pages = get_posts(array(
             'post_type' => 'page',
             'post_status' => 'publish',
             'numberposts' => -1,
-            'post_parent' => 0, // 親ページIDが0（最上位）のもののみ
-            'orderby' => 'title',
+            'orderby' => 'menu_order',
             'order' => 'ASC'
         ));
         $available_pages = $all_pages;
@@ -704,57 +975,75 @@ function llms_generator_page() {
     
     // 固定ページ出力設定フォーム
     echo '<h2>固定ページ出力設定</h2>';
-    echo '<p>LLMS.txtに出力する最上位の親ページを選択してください。選択した親ページとその子ページが階層構造で出力されます。</p>';
+    echo '<p>LLMS.txtに出力する固定ページと順番を設定してください。</p>';
     echo '<form method="post" style="margin-bottom: 30px;">';
     wp_nonce_field('llms_page_settings_action', 'llms_page_settings_nonce');
     echo '<table class="form-table">';
     echo '<tr>';
-    echo '<th scope="row">出力する親ページ</th>';
+    echo '<th scope="row">出力する固定ページ</th>';
     echo '<td>';
     
     if (!empty($available_pages)) {
         echo '<div style="margin-bottom: 20px;">';
-        echo '<p><strong>チェックした親ページとその子ページが出力されます：</strong></p>';
-        foreach ($available_pages as $page) {
-            $checked = in_array($page->ID, $enabled_pages) ? ' checked' : '';
-            echo '<label style="display: block; margin-bottom: 5px;">';
-            echo '<input type="checkbox" name="enabled_pages[]" value="' . esc_attr($page->ID) . '"' . $checked . '>';
-            echo ' ' . esc_html($page->post_title);
-            
-            // 子ページがあるかどうかを確認
-            if (function_exists('get_posts')) {
-                $child_pages = get_posts(array(
-                    'post_type' => 'page',
-                    'post_status' => 'publish',
-                    'post_parent' => $page->ID,
-                    'numberposts' => -1
-                ));
-                if (!empty($child_pages)) {
-                    echo ' <span style="color: #666;">(' . count($child_pages) . '個の子ページ)</span>';
+        echo '<p><strong>チェックした固定ページのみが出力されます：</strong></p>';
+        
+        // 一括選択ボタン
+        echo '<div style="margin-bottom: 15px; padding: 10px; background: #f0f0f1; border-radius: 3px;">';
+        echo '<button type="button" id="check-all-pages" class="button button-secondary" style="margin-right: 10px;">すべて選択</button>';
+        echo '<button type="button" id="uncheck-all-pages" class="button button-secondary">すべて解除</button>';
+        echo '</div>';
+        
+        // 階層構造でページを表示する関数
+        function display_page_tree($pages, $enabled_pages, $parent_id = 0, $level = 0) {
+            $child_pages = array();
+            foreach ($pages as $page) {
+                if ($page->post_parent == $parent_id) {
+                    $child_pages[] = $page;
                 }
             }
-            echo '</label>';
+            
+            foreach ($child_pages as $page) {
+                // enabledリストに含まれている場合のみチェック済み
+                $checked = (!empty($enabled_pages) && in_array($page->ID, $enabled_pages)) ? ' checked' : '';
+                $indent = str_repeat('&nbsp;&nbsp;&nbsp;&nbsp;', $level);
+                echo '<label style="display: block; margin-bottom: 5px;">';
+                echo $indent;
+                echo '<input type="checkbox" name="enabled_pages[]" value="' . esc_attr($page->ID) . '"' . $checked . '>';
+                echo ' ' . esc_html($page->post_title);
+                if ($level == 0) {
+                    echo ' <span style="color: #999; font-size: 12px;">(親ページ)</span>';
+                } else {
+                    echo ' <span style="color: #999; font-size: 12px;">(子ページ)</span>';
+                }
+                echo '</label>';
+                
+                // 再帰的に子ページを表示
+                display_page_tree($pages, $enabled_pages, $page->ID, $level + 1);
+            }
         }
+        
+        display_page_tree($available_pages, $enabled_pages);
         echo '</div>';
     
     if (!empty($available_pages)) {
         echo '<div>';
         echo '<p><strong>出力順序：</strong></p>';
-        echo '<p class="description">上下の矢印ボタンをクリックして順番を変更してください。</p>';
+        echo '<p class="description">上下の矢印ボタンをクリックして順番を変更してください。選択した固定ページのみが表示されます。</p>';
         echo '<div id="page-order-list" style="border: 1px solid #ddd; padding: 15px; background: #f9f9f9; min-height: 120px;">';
         
-        // 有効な親ページの順序設定
-        $enabled_parent_pages = array();
+        // 有効な固定ページの順序設定
+        $enabled_page_objects = array();
         foreach ($available_pages as $page) {
-            if (in_array($page->ID, $enabled_pages)) {
-                $enabled_parent_pages[] = $page;
+            // enabledリストに含まれるもののみ
+            if (!empty($enabled_pages) && in_array($page->ID, $enabled_pages)) {
+                $enabled_page_objects[] = $page;
             }
         }
         
         $ordered_pages = array();
         if (!empty($page_order)) {
             foreach ($page_order as $page_id) {
-                foreach ($enabled_parent_pages as $page) {
+                foreach ($enabled_page_objects as $page) {
                     if ($page->ID == $page_id) {
                         $ordered_pages[] = $page;
                         break;
@@ -763,8 +1052,8 @@ function llms_generator_page() {
             }
         }
         
-        // 順序設定にない有効な親ページを最後に追加
-        foreach ($enabled_parent_pages as $page) {
+        // 順序設定にない有効な固定ページを最後に追加
+        foreach ($enabled_page_objects as $page) {
             $already_ordered = false;
             foreach ($ordered_pages as $ordered_page) {
                 if ($ordered_page->ID == $page->ID) {
@@ -783,9 +1072,19 @@ function llms_generator_page() {
             
             echo '<div class="page-item" data-page-id="' . esc_attr($page->ID) . '" style="display: flex; align-items: center; padding: 10px; margin: 8px 0; background: #fff; border: 1px solid #ccc; border-radius: 3px;">';
             
-            // 固定ページタイトル
+            // 固定ページタイトル（階層表示）
             echo '<span style="flex: 1; font-weight: 500;">';
-            echo esc_html($page->post_title) . ' (ID: ' . esc_html($page->ID) . ')';
+            $page_hierarchy = '';
+            if ($page->post_parent != 0) {
+                // 親ページのタイトルを取得
+                foreach ($available_pages as $parent_page) {
+                    if ($parent_page->ID == $page->post_parent) {
+                        $page_hierarchy = esc_html($parent_page->post_title) . ' > ';
+                        break;
+                    }
+                }
+            }
+            echo $page_hierarchy . esc_html($page->post_title) . ' (ID: ' . esc_html($page->ID) . ')';
             echo '</span>';
             
             // 矢印ボタン
@@ -814,6 +1113,7 @@ function llms_generator_page() {
         }
         echo '<input type="hidden" name="page_order" id="page_order" value="' . esc_attr(implode(',', $page_order_string)) . '">';
         echo '</div>';
+    }
     } else {
         echo '<p>公開されている固定ページが見つかりませんでした。</p>';
     }
@@ -825,6 +1125,28 @@ function llms_generator_page() {
     echo '<input type="submit" name="save_page_settings" class="button button-primary" value="固定ページ設定を保存">';
     echo '</p>';
     echo '</form>';
+    
+    // 固定ページ一括選択用JavaScript
+    ?>
+    <script type="text/javascript">
+    jQuery(document).ready(function($) {
+        // すべて選択ボタン
+        $("#check-all-pages").click(function(e) {
+            e.preventDefault();
+            $('input[name="enabled_pages[]"]').prop('checked', true);
+            console.log("All pages checked");
+        });
+        
+        // すべて解除ボタン
+        $("#uncheck-all-pages").click(function(e) {
+            e.preventDefault();
+            $('input[name="enabled_pages[]"]').prop('checked', false);
+            console.log("All pages unchecked");
+        });
+    });
+    </script>
+    
+    <?php
     
     // 固定ページ順序変更用JavaScript
     ?>
@@ -941,26 +1263,28 @@ function llms_generator_page() {
                 }
             }
         }
-        echo '有効な親ページ: <strong>' . implode(', ', $enabled_page_titles) . '</strong>';
-        
-        if (!empty($page_order)) {
-            $ordered_page_titles = array();
-            foreach ($page_order as $page_id) {
-                if (in_array($page_id, $enabled_pages)) {
-                    foreach ($available_pages as $page) {
-                        if ($page->ID == $page_id) {
-                            $ordered_page_titles[] = $page->post_title;
-                            break;
-                        }
+        echo '有効な固定ページ: <strong>' . implode(', ', $enabled_page_titles) . '</strong>';
+    } else {
+        echo '有効な固定ページ: <strong>なし</strong>';
+    }
+    
+    if (!empty($page_order)) {
+        // 出力されるページのタイトルを順序設定に従って表示
+        $output_page_titles = array();
+        foreach ($page_order as $page_id) {
+            // 有効なページのみ表示
+            if (!empty($enabled_pages) && in_array($page_id, $enabled_pages)) {
+                foreach ($available_pages as $page) {
+                    if ($page->ID == $page_id) {
+                        $output_page_titles[] = $page->post_title;
+                        break;
                     }
                 }
             }
-            if (!empty($ordered_page_titles)) {
-                echo '<br>親ページ出力順序: <strong>' . implode(' → ', $ordered_page_titles) . '</strong>';
-            }
         }
-    } else {
-        echo '固定ページ出力: <strong>無効</strong>';
+        if (!empty($output_page_titles)) {
+            echo '<br>固定ページ出力順序: <strong>' . implode(' → ', $output_page_titles) . '</strong>';
+        }
     }
     echo '</p>';
     
