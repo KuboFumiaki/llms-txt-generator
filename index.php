@@ -381,19 +381,20 @@ function generate_llms_txt() {
     return true;
 }
 
-// 新規固定ページを自動で有効化する関数
-function llms_auto_enable_new_page($post_id, $post, $update) {
-    // 既存ページの更新の場合はスキップ
-    if ($update) {
-        return;
-    }
-    
+// 固定ページ保存時の統合処理関数
+// デバッグ有効化: wp-config.phpに define('WP_DEBUG', true); を追加
+function llms_handle_page_save($post_id, $post, $update) {
     // 固定ページ以外はスキップ
     if ($post->post_type !== 'page') {
         return;
     }
     
-    // 下書きや非公開ページはスキップ
+    // 自動保存、リビジョンはスキップ
+    if (wp_is_post_autosave($post_id) || wp_is_post_revision($post_id)) {
+        return;
+    }
+    
+    // 公開状態のページのみ処理
     if ($post->post_status !== 'publish') {
         return;
     }
@@ -403,42 +404,41 @@ function llms_auto_enable_new_page($post_id, $post, $update) {
         return;
     }
     
-    // 現在の設定を取得
-    $page_settings = get_option('llms_page_settings', array());
-    $enabled_pages = isset($page_settings['enabled_pages']) ? $page_settings['enabled_pages'] : array();
-    $page_order = isset($page_settings['order']) ? $page_settings['order'] : array();
-    
-    // 既に有効化リストに含まれている場合はスキップ
-    if (in_array($post_id, $enabled_pages)) {
-        return;
-    }
-    
-    // 有効化リストに追加
-    $enabled_pages[] = $post_id;
-    
-    // 順序設定の先頭に追加
-    array_unshift($page_order, $post_id);
-    
-    // 設定を更新
-    $page_settings['enabled_pages'] = $enabled_pages;
-    $page_settings['order'] = $page_order;
-    update_option('llms_page_settings', $page_settings);
-}
-
-// 固定ページ更新時にLLMS.txtを生成する関数
-function llms_generate_on_page_update($post_id, $post_after, $post_before) {
-    // 固定ページ以外はスキップ
-    if ($post_after->post_type !== 'page') {
-        return;
-    }
-    
-    // 公開状態のページのみ対象
-    if ($post_after->post_status !== 'publish') {
-        return;
+    // 新規作成の場合は自動で有効化
+    if (!$update) {
+        // 現在の設定を取得
+        $page_settings = get_option('llms_page_settings', array());
+        $enabled_pages = isset($page_settings['enabled_pages']) ? $page_settings['enabled_pages'] : array();
+        $page_order = isset($page_settings['order']) ? $page_settings['order'] : array();
+        
+        // 既に有効化リストに含まれていない場合のみ追加
+        if (!in_array($post_id, $enabled_pages)) {
+            // 有効化リストに追加
+            $enabled_pages[] = $post_id;
+            
+            // 順序設定の先頭に追加
+            array_unshift($page_order, $post_id);
+            
+            // 設定を更新
+            $page_settings['enabled_pages'] = $enabled_pages;
+            $page_settings['order'] = $page_order;
+            update_option('llms_page_settings', $page_settings);
+            
+            // デバッグ用ログ
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log("LLMS: Auto-enabled new page ID {$post_id} - {$post->post_title}");
+            }
+        }
     }
     
     // LLMS.txtを生成
     generate_llms_txt();
+    
+    // デバッグ用ログ
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        $action = $update ? 'updated' : 'created';
+        error_log("LLMS: Page {$action} - ID {$post_id} - {$post->post_title}");
+    }
 }
 
 // 固定ページのステータス変更時にLLMS.txtを生成する関数
@@ -452,26 +452,24 @@ function llms_handle_page_status_change($new_status, $old_status, $post) {
     if ($new_status === 'publish' || $old_status === 'publish') {
         // LLMS.txtを生成
         generate_llms_txt();
+        
+        // デバッグ用ログ
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: Page status changed from {$old_status} to {$new_status} - ID {$post->ID} - {$post->post_title}");
+        }
     }
 }
 
 // 記事公開・更新時にLLMS.txtを生成（WordPress環境でのみ実行）
 if (function_exists('add_action')) {
+    // 投稿関連
     add_action('publish_post', 'generate_llms_txt');
-    add_action('post_updated', 'generate_llms_txt');
-    add_action('publish_page', 'generate_llms_txt'); // 固定ページ公開時
     
-    // 固定ページ更新時の専用フック
-    add_action('post_updated', 'llms_generate_on_page_update', 10, 3);
+    // 固定ページ関連 - 保存時フック（新規作成・更新両方をカバー）
+    add_action('save_post', 'llms_handle_page_save', 10, 3);
     
-    // より確実な固定ページ保存時のフック
-    add_action('save_post_page', 'generate_llms_txt');
-    
-    // 固定ページのステータス変更時（下書き→公開など）
+    // ステータス変更時（下書き→公開、公開→下書きなど）
     add_action('transition_post_status', 'llms_handle_page_status_change', 10, 3);
-    
-    // 新規固定ページ作成時に自動で有効化
-    add_action('wp_insert_post', 'llms_auto_enable_new_page', 10, 3);
 }
 
 // 管理画面にLLMS.txt生成ボタンを追加（WordPress環境でのみ実行）
