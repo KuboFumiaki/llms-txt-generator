@@ -98,7 +98,24 @@ function generate_llms_txt() {
     
     // 固定ページの設定を取得
     $page_settings = get_option('llms_page_settings', array());
-    $enabled_pages = isset($page_settings['enabled_pages']) ? $page_settings['enabled_pages'] : array();
+    
+    // 旧設定との互換性を保つ
+    if (isset($page_settings['enabled']) && $page_settings['enabled'] === true && !isset($page_settings['enabled_pages'])) {
+        // 旧設定で全ページが有効だった場合、全ての親ページを有効にする
+        $all_parent_pages = get_posts(array(
+            'post_type' => 'page',
+            'post_status' => 'publish',
+            'numberposts' => -1,
+            'post_parent' => 0
+        ));
+        $enabled_pages = array();
+        foreach ($all_parent_pages as $page) {
+            $enabled_pages[] = $page->ID;
+        }
+    } else {
+        $enabled_pages = isset($page_settings['enabled_pages']) ? $page_settings['enabled_pages'] : array();
+    }
+    
     $page_order = isset($page_settings['order']) ? $page_settings['order'] : array();
     
     // 投稿タイプ別に記事を分類
@@ -110,17 +127,33 @@ function generate_llms_txt() {
         
         // 固定ページの処理
         if ($post_type === 'page') {
-            // 親ページIDを取得（0は最上位ページ）
-            $parent_id = $post->post_parent;
-            if ($parent_id == 0) {
-                // 最上位の親ページのみチェック
-                if (!empty($enabled_pages) && in_array($post->ID, $enabled_pages)) {
-                    $pages[] = $post;
-                }
-            } else {
-                // 子ページは親ページが有効な場合にのみ追加
-                if (!empty($enabled_pages) && in_array($parent_id, $enabled_pages)) {
-                    $pages[] = $post;
+            if (!empty($enabled_pages)) {
+                // 親ページIDを取得（0は最上位ページ）
+                $parent_id = $post->post_parent;
+                if ($parent_id == 0) {
+                    // 最上位の親ページのみチェック
+                    if (in_array($post->ID, $enabled_pages)) {
+                        $pages[] = $post;
+                    }
+                } else {
+                    // 子ページは最上位の祖先ページが有効な場合にのみ追加
+                    $root_parent_id = $post->ID;
+                    $current_post = $post;
+                    
+                    // 最上位の親ページを見つける
+                    while ($current_post->post_parent != 0) {
+                        $parent_post = get_post($current_post->post_parent);
+                        if ($parent_post) {
+                            $root_parent_id = $parent_post->ID;
+                            $current_post = $parent_post;
+                        } else {
+                            break;
+                        }
+                    }
+                    
+                    if (in_array($root_parent_id, $enabled_pages)) {
+                        $pages[] = $post;
+                    }
                 }
             }
             continue;
@@ -205,8 +238,16 @@ function generate_llms_txt() {
             }
             $content .= "- [{$parent_page->post_title}]({$page_url}):{$excerpt}\n";
             
-            // 子ページがある場合は出力
+            // 子ページがある場合は出力（階層順に並び替え）
             if (isset($child_pages[$parent_page->ID])) {
+                // 子ページをmenu_orderで並び替え
+                usort($child_pages[$parent_page->ID], function($a, $b) {
+                    if ($a->menu_order == $b->menu_order) {
+                        return strcmp($a->post_title, $b->post_title);
+                    }
+                    return $a->menu_order <=> $b->menu_order;
+                });
+                
                 foreach ($child_pages[$parent_page->ID] as $child_page) {
                     $child_url = get_permalink($child_page->ID);
                     if (function_exists('wp_trim_words')) {
@@ -215,6 +256,34 @@ function generate_llms_txt() {
                         $child_excerpt = mb_substr(strip_tags($child_page->post_content), 0, 50) . '...';
                     }
                     $content .= "  - [{$child_page->post_title}]({$child_url}):{$child_excerpt}\n";
+                    
+                    // 孫ページがある場合も出力
+                    $grandchild_pages = array();
+                    foreach ($pages as $page) {
+                        if ($page->post_parent == $child_page->ID) {
+                            $grandchild_pages[] = $page;
+                        }
+                    }
+                    
+                    if (!empty($grandchild_pages)) {
+                        // 孫ページもmenu_orderで並び替え
+                        usort($grandchild_pages, function($a, $b) {
+                            if ($a->menu_order == $b->menu_order) {
+                                return strcmp($a->post_title, $b->post_title);
+                            }
+                            return $a->menu_order <=> $b->menu_order;
+                        });
+                        
+                        foreach ($grandchild_pages as $grandchild_page) {
+                            $grandchild_url = get_permalink($grandchild_page->ID);
+                            if (function_exists('wp_trim_words')) {
+                                $grandchild_excerpt = wp_trim_words($grandchild_page->post_content, 15, '...');
+                            } else {
+                                $grandchild_excerpt = mb_substr(strip_tags($grandchild_page->post_content), 0, 50) . '...';
+                            }
+                            $content .= "    - [{$grandchild_page->post_title}]({$grandchild_url}):{$grandchild_excerpt}\n";
+                        }
+                    }
                 }
             }
             $content .= "\n";
