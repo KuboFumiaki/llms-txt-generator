@@ -121,7 +121,7 @@ LLMs.txt Generator for WPは、WordPressサイトのコンテンツをAIや機�
 == Development ==
 
 このプラグインはGitHubで開発されています：
-https://github.com/KuboFumiaki/llms-txt-generator
+https://github.com/KuboFumiaki/llms-txt-generator-wp
 
 バグ報告や機能リクエストはGitHubのIssuesでお願いします。
 

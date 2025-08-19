@@ -23,7 +23,7 @@ WordPressサイトのコンテンツからLLMs.txtファイルを自動生成す
 
 1. このリポジトリをダウンロードまたはクローン
 ```bash
-git clone https://github.com/KuboFumiaki/llms-txt-generator.git
+git clone https://github.com/KuboFumiaki/llms-txt-generator-wp.git
 ```
 
 2. プラグインフォルダを `/wp-content/plugins/` にアップロード
@@ -86,7 +86,7 @@ git clone https://github.com/KuboFumiaki/llms-txt-generator.git
 ## 📁 ファイル構成
 
 ```
-llms-txt-generator/
+llms-txt-generator-wp/
 ├── index.php          # メインプラグインファイル
 ├── uninstall.php      # アンインストール処理
 ├── readme.txt         # WordPress Plugin Directory用
@@ -112,11 +112,11 @@ llms-txt-generator/
 
 ## 🐛 バグ報告・機能リクエスト
 
-バグ報告や機能リクエストは [Issues](https://github.com/KuboFumiaki/llms-txt-generator/issues) でお願いします。
+バグ報告や機能リクエストは [Issues](https://github.com/KuboFumiaki/llms-txt-generator-wp/issues) でお願いします。
 
 ## 📞 サポート
 
-- [GitHub Issues](https://github.com/KuboFumiaki/llms-txt-generator/issues)
+- [GitHub Issues](https://github.com/KuboFumiaki/llms-txt-generator-wp/issues)
 
 ---
 
