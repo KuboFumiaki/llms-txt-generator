@@ -8,9 +8,10 @@ WordPressサイトのコンテンツからLLMs.txtファイルを自動生成す
 
 ## 📋 主な機能
 
-- **自動生成**: 投稿の公開・更新時に自動的にLLMS.txtファイルを生成
+- **自動生成**: 投稿・固定ページの公開・更新時に自動的にLLMS.txtファイルを更新
 - **カスタムテキスト**: ファイル上部に表示するカスタムテキストの設定
-- **投稿タイプ管理**: 出力する投稿タイプの選択と順序の設定
+- **固定ページ自動出力**: 出力する固定ページの選択と順序の設定
+- **投稿タイプ自動出力**: 出力する投稿タイプの選択と順序の設定
 - **カテゴリ分類**: ブログ投稿をカテゴリ別に自動分類
 - **文字コード選択**: UTF-8またはShift-JISでの出力に対応
 - **手動生成**: 管理画面から手動でファイル生成も可能
@@ -42,6 +43,7 @@ git clone https://github.com/KuboFumiaki/llms-txt-generator.git
    - **カスタムテキスト**: ファイル上部に表示するテキスト
    - **文字コード**: UTF-8またはShift-JISを選択
    - **投稿タイプ**: 出力する投稿タイプと順序を設定
+   - **固定ページ**: 出力する固定ページと順序を設定
 3. 「LLMS.txtを生成」ボタンをクリック
 4. 生成されたファイルに `https://yoursite.com/llms.txt` でアクセス
 
@@ -55,6 +57,9 @@ git clone https://github.com/KuboFumiaki/llms-txt-generator.git
 ※ここより上部はカスタムテキストに置き換え可能※
 
 # 最終更新: 2025-01-01 12:00:00
+
+## 固定ページ
+- [ページタイトル](URL):記事の要約...
 
 ## 投稿
 
@@ -112,7 +117,6 @@ llms-txt-generator/
 ## 📞 サポート
 
 - [GitHub Issues](https://github.com/KuboFumiaki/llms-txt-generator/issues)
-- [WordPress Plugin Directory](https://wordpress.org/plugins/llms-txt-generator/) (申請予定)
 
 ---
 
