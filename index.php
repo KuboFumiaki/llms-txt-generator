@@ -40,14 +40,17 @@ function llms_txt_generator_activate() {
         add_option('llms_page_settings', array('enabled_pages' => array(), 'order' => array()));
     }
     
-    // 初回のLLMS.txtファイルを生成
-    generate_llms_txt();
+    // 初回のLLMS.txtファイルを生成（WordPress完全初期化後に実行）
+    if (function_exists('wp_schedule_single_event')) {
+        wp_schedule_single_event(time() + 10, 'llms_generate_initial_file');
+    }
 }
 
 // プラグインの無効化時に実行される処理
 function llms_txt_generator_deactivate() {
     // 設定データは残すが、スケジュールされたイベントがあれば削除
     wp_clear_scheduled_hook('llms_txt_generate_cron');
+    wp_clear_scheduled_hook('llms_generate_initial_file');
 }
 
 // WordPress環境でのみフックを登録
@@ -102,15 +105,21 @@ function generate_llms_txt() {
     // 旧設定との互換性を保つ
     if (isset($page_settings['enabled']) && $page_settings['enabled'] === true && !isset($page_settings['enabled_pages'])) {
         // 旧設定で全ページが有効だった場合、全ての親ページを有効にする
-        $all_parent_pages = get_posts(array(
-            'post_type' => 'page',
-            'post_status' => 'publish',
-            'numberposts' => -1,
-            'post_parent' => 0
-        ));
-        $enabled_pages = array();
-        foreach ($all_parent_pages as $page) {
-            $enabled_pages[] = $page->ID;
+        if (function_exists('get_posts')) {
+            $all_parent_pages = get_posts(array(
+                'post_type' => 'page',
+                'post_status' => 'publish',
+                'numberposts' => -1,
+                'post_parent' => 0
+            ));
+            $enabled_pages = array();
+            if ($all_parent_pages) {
+                foreach ($all_parent_pages as $page) {
+                    $enabled_pages[] = $page->ID;
+                }
+            }
+        } else {
+            $enabled_pages = array();
         }
     } else {
         $enabled_pages = isset($page_settings['enabled_pages']) ? $page_settings['enabled_pages'] : array();
@@ -389,6 +398,7 @@ if (function_exists('add_action')) {
     add_action('post_updated', 'generate_llms_txt');
     add_action('publish_page', 'generate_llms_txt'); // 固定ページ公開時
     add_action('page_updated', 'generate_llms_txt'); // 固定ページ更新時（存在しない場合はpost_updatedで対応）
+    add_action('llms_generate_initial_file', 'generate_llms_txt'); // 初回生成用
 }
 
 // 管理画面にLLMS.txt生成ボタンを追加（WordPress環境でのみ実行）
