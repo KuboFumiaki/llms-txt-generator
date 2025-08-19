@@ -681,6 +681,12 @@ function llms_generator_page() {
         echo '<div style="margin-bottom: 20px;">';
         echo '<p><strong>チェックした固定ページが出力されます：</strong></p>';
         
+        // 一括選択ボタン
+        echo '<div style="margin-bottom: 15px; padding: 10px; background: #f0f0f1; border-radius: 3px;">';
+        echo '<button type="button" id="check-all-pages" class="button button-secondary" style="margin-right: 10px;">すべて選択</button>';
+        echo '<button type="button" id="uncheck-all-pages" class="button button-secondary">すべて解除</button>';
+        echo '</div>';
+        
         // 階層構造でページを表示する関数
         function display_page_tree($pages, $enabled_pages, $parent_id = 0, $level = 0) {
             $child_pages = array();
@@ -811,6 +817,28 @@ function llms_generator_page() {
     echo '<input type="submit" name="save_page_settings" class="button button-primary" value="固定ページ設定を保存">';
     echo '</p>';
     echo '</form>';
+    
+    // 固定ページ一括選択用JavaScript
+    ?>
+    <script type="text/javascript">
+    jQuery(document).ready(function($) {
+        // すべて選択ボタン
+        $("#check-all-pages").click(function(e) {
+            e.preventDefault();
+            $('input[name="enabled_pages[]"]').prop('checked', true);
+            console.log("All pages checked");
+        });
+        
+        // すべて解除ボタン
+        $("#uncheck-all-pages").click(function(e) {
+            e.preventDefault();
+            $('input[name="enabled_pages[]"]').prop('checked', false);
+            console.log("All pages unchecked");
+        });
+    });
+    </script>
+    
+    <?php
     
     // 固定ページ順序変更用JavaScript
     ?>
