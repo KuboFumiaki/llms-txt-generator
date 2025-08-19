@@ -59,7 +59,7 @@ LLMs.txt Generator for WPは、WordPressサイトのコンテンツをAIや機�
 = 手動インストール =
 
 1. プラグインファイルをダウンロード
-2. `/wp-content/plugins/llms-txt-generator`ディレクトリにアップロード
+2. `/wp-content/plugins/llms-txt-generator-wp`ディレクトリにアップロード
 3. WordPress管理画面でプラグインを有効化
 
 = 設定 =

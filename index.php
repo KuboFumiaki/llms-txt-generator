@@ -1,14 +1,14 @@
 <?php
 /**
  * Plugin Name: LLMs.txt Generator for WP
- * Plugin URI: https://github.com/KuboFumiaki/llms-txt-generator
+ * Plugin URI: https://github.com/KuboFumiaki/llms-txt-generator-wp
  * Description: WordPressサイトのコンテンツからLLMS.txtファイルを自動生成するプラグインです。投稿、カスタム投稿タイプ、カテゴリ情報を含むマークダウン形式のファイルを生成し、LLMsがサイト内容を理解するのに役立ちます。
  * Version: 1.0.0
  * Author: Kubo Fumiaki
  * Author URI: 
  * License: GPL v2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
- * Text Domain: llms-txt-generator
+ * Text Domain: llms-txt-generator-wp
  * Requires at least: 5.0
  * Tested up to: 6.4
  * Requires PHP: 7.3
@@ -617,7 +617,7 @@ function llms_generator_page() {
     
     // 権限チェック
     if (!current_user_can('manage_options')) {
-        wp_die(esc_html__('このページにアクセスする権限がありません。', 'llms-txt-generator'));
+        wp_die(esc_html__('このページにアクセスする権限がありません。', 'llms-txt-generator-wp'));
     }
     
     $file_path = ABSPATH . 'llms.txt';
