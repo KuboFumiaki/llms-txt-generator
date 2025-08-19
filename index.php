@@ -225,7 +225,7 @@ function generate_llms_txt() {
             }
         }
         
-        // 親ページとその子ページを階層構造で出力
+        // 親ページとその子ページを出力（親ページの順番に紐づけて、子ページは公開日順）
         foreach ($ordered_parent_pages as $parent_page) {
             $page_url = get_permalink($parent_page->ID);
             if (function_exists('wp_trim_words')) {
@@ -235,33 +235,17 @@ function generate_llms_txt() {
             }
             $content .= "- [{$parent_page->post_title}]({$page_url}):{$excerpt}\n";
             
-            // この親ページの子ページがあれば出力
+            // この親ページの子ページがあれば公開日順で出力
             if (isset($child_pages_by_parent[$parent_page->ID])) {
                 $child_pages = $child_pages_by_parent[$parent_page->ID];
                 
-                // 子ページの順序設定
-                $ordered_child_pages = array();
-                $child_pages_by_id = array();
-                
-                foreach ($child_pages as $child_page) {
-                    $child_pages_by_id[$child_page->ID] = $child_page;
-                }
-                
-                // 順序設定に従って子ページを並び替え
-                if (!empty($page_order)) {
-                    foreach ($page_order as $page_id) {
-                        if (isset($child_pages_by_id[$page_id])) {
-                            $ordered_child_pages[] = $child_pages_by_id[$page_id];
-                            unset($child_pages_by_id[$page_id]);
-                        }
-                    }
-                }
-                
-                // 順序設定にない子ページを最後に追加
-                $ordered_child_pages = array_merge($ordered_child_pages, array_values($child_pages_by_id));
+                // 子ページを公開日順でソート
+                usort($child_pages, function($a, $b) {
+                    return strcmp($a->post_date, $b->post_date);
+                });
                 
                 // 子ページを出力
-                foreach ($ordered_child_pages as $child_page) {
+                foreach ($child_pages as $child_page) {
                     $child_url = get_permalink($child_page->ID);
                     if (function_exists('wp_trim_words')) {
                         $child_excerpt = wp_trim_words($child_page->post_content, 15, '...');
@@ -1036,19 +1020,19 @@ function llms_generator_page() {
         echo '<p class="description">上下の矢印ボタンをクリックして順番を変更してください。選択した固定ページのみが表示されます。</p>';
         echo '<div id="page-order-list" style="border: 1px solid #ddd; padding: 15px; background: #f9f9f9; min-height: 120px;">';
         
-        // 有効な固定ページの順序設定
-        $enabled_page_objects = array();
+        // 有効な親ページのみの順序設定（子ページは表示しない）
+        $enabled_parent_pages = array();
         foreach ($available_pages as $page) {
-            // enabledリストに含まれるもののみ
-            if (!empty($enabled_pages) && in_array($page->ID, $enabled_pages)) {
-                $enabled_page_objects[] = $page;
+            // enabledリストに含まれる親ページのみ
+            if (!empty($enabled_pages) && in_array($page->ID, $enabled_pages) && $page->post_parent == 0) {
+                $enabled_parent_pages[] = $page;
             }
         }
         
         $ordered_pages = array();
         if (!empty($page_order)) {
             foreach ($page_order as $page_id) {
-                foreach ($enabled_page_objects as $page) {
+                foreach ($enabled_parent_pages as $page) {
                     if ($page->ID == $page_id) {
                         $ordered_pages[] = $page;
                         break;
@@ -1057,8 +1041,8 @@ function llms_generator_page() {
             }
         }
         
-        // 順序設定にない有効な固定ページを最後に追加
-        foreach ($enabled_page_objects as $page) {
+        // 順序設定にない有効な親ページを最後に追加
+        foreach ($enabled_parent_pages as $page) {
             $already_ordered = false;
             foreach ($ordered_pages as $ordered_page) {
                 if ($ordered_page->ID == $page->ID) {
@@ -1077,19 +1061,9 @@ function llms_generator_page() {
             
             echo '<div class="page-item" data-page-id="' . esc_attr($page->ID) . '" style="display: flex; align-items: center; padding: 10px; margin: 8px 0; background: #fff; border: 1px solid #ccc; border-radius: 3px;">';
             
-            // 固定ページタイトル（階層表示）
+            // 親ページタイトルのみ表示
             echo '<span style="flex: 1; font-weight: 500;">';
-            $page_hierarchy = '';
-            if ($page->post_parent != 0) {
-                // 親ページのタイトルを取得
-                foreach ($available_pages as $parent_page) {
-                    if ($parent_page->ID == $page->post_parent) {
-                        $page_hierarchy = esc_html($parent_page->post_title) . ' > ';
-                        break;
-                    }
-                }
-            }
-            echo esc_html($page_hierarchy) . esc_html($page->post_title) . ' (ID: ' . esc_html($page->ID) . ')';
+            echo esc_html($page->post_title) . ' (ID: ' . esc_html($page->ID) . ')';
             echo '</span>';
             
             // 矢印ボタン
@@ -1276,13 +1250,13 @@ function llms_generator_page() {
     }
     
     if (!empty($page_order)) {
-        // 出力されるページのタイトルを順序設定に従って表示
+        // 出力される親ページのタイトルを順序設定に従って表示
         $output_page_titles = array();
         foreach ($page_order as $page_id) {
-            // 有効なページのみ表示
+            // 有効な親ページのみ表示
             if (!empty($enabled_pages) && in_array($page_id, $enabled_pages)) {
                 foreach ($available_pages as $page) {
-                    if ($page->ID == $page_id) {
+                    if ($page->ID == $page_id && $page->post_parent == 0) {
                         $output_page_titles[] = $page->post_title;
                         break;
                     }
@@ -1290,7 +1264,7 @@ function llms_generator_page() {
             }
         }
         if (!empty($output_page_titles)) {
-                            echo '<br>固定ページ出力順序: <strong>' . esc_html(implode(' → ', $output_page_titles)) . '</strong>';
+            echo '<br>親ページ出力順序: <strong>' . esc_html(implode(' → ', $output_page_titles)) . '</strong>';
         }
     }
     echo '</p>';
