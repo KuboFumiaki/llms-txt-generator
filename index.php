@@ -9,7 +9,6 @@
  * License: GPL v2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: llms-txt-generator
- * Domain Path: /languages
  * Requires at least: 5.0
  * Tested up to: 6.4
  * Requires PHP: 7.3
@@ -106,7 +105,7 @@ function generate_llms_txt() {
     // $content .= "- サイト名: {$site_name}\n";
     // $content .= "- URL: {$site_url}\n";
     // $content .= "- 説明: {$site_description}\n";
-    $content .= "# 最終更新: " . date('Y-m-d H:i:s') . "\n\n";
+    $content .= "# 最終更新: " . gmdate('Y-m-d H:i:s') . "\n\n";
     
     // 投稿タイプの設定を取得
     $post_type_settings = get_option('llms_post_type_settings', array());
@@ -232,7 +231,7 @@ function generate_llms_txt() {
             if (function_exists('wp_trim_words')) {
                 $excerpt = wp_trim_words($parent_page->post_content, 15, '...');
             } else {
-                $excerpt = mb_substr(strip_tags($parent_page->post_content), 0, 50) . '...';
+                $excerpt = mb_substr(wp_strip_all_tags($parent_page->post_content), 0, 50) . '...';
             }
             $content .= "- [{$parent_page->post_title}]({$page_url}):{$excerpt}\n";
             
@@ -267,7 +266,7 @@ function generate_llms_txt() {
                     if (function_exists('wp_trim_words')) {
                         $child_excerpt = wp_trim_words($child_page->post_content, 15, '...');
                     } else {
-                        $child_excerpt = mb_substr(strip_tags($child_page->post_content), 0, 50) . '...';
+                        $child_excerpt = mb_substr(wp_strip_all_tags($child_page->post_content), 0, 50) . '...';
                     }
                     $content .= "  - [{$child_page->post_title}]({$child_url}):{$child_excerpt}\n";
                 }
@@ -280,7 +279,7 @@ function generate_llms_txt() {
             if (function_exists('wp_trim_words')) {
                 $excerpt = wp_trim_words($orphan_page->post_content, 15, '...');
             } else {
-                $excerpt = mb_substr(strip_tags($orphan_page->post_content), 0, 50) . '...';
+                $excerpt = mb_substr(wp_strip_all_tags($orphan_page->post_content), 0, 50) . '...';
             }
             $content .= "- [{$orphan_page->post_title}]({$page_url}):{$excerpt}\n";
         }
@@ -323,9 +322,9 @@ function generate_llms_txt() {
                     // wp_trim_words関数が存在しない場合の代替処理
                     if (function_exists('wp_trim_words')) {
                         $excerpt = wp_trim_words($post->post_content, 15, '...');
-                    } else {
-                        $excerpt = mb_substr(strip_tags($post->post_content), 0, 50) . '...';
-                    }
+                                         } else {
+                         $excerpt = mb_substr(wp_strip_all_tags($post->post_content), 0, 50) . '...';
+                     }
                     $content .= "- [{$post->post_title}]({$post_url}):{$excerpt}\n";
                 }
                 $content .= "\n";
@@ -340,7 +339,7 @@ function generate_llms_txt() {
                     if (function_exists('wp_trim_words')) {
                         $excerpt = wp_trim_words($post->post_content, 15, '...');
                     } else {
-                        $excerpt = mb_substr(strip_tags($post->post_content), 0, 50) . '...';
+                        $excerpt = mb_substr(wp_strip_all_tags($post->post_content), 0, 50) . '...';
                     }
                     $content .= "- [{$post->post_title}]({$post_url}):{$excerpt}\n";
                 }
@@ -354,7 +353,7 @@ function generate_llms_txt() {
                 if (function_exists('wp_trim_words')) {
                     $excerpt = wp_trim_words($post->post_content, 15, '...');
                 } else {
-                    $excerpt = mb_substr(strip_tags($post->post_content), 0, 50) . '...';
+                    $excerpt = mb_substr(wp_strip_all_tags($post->post_content), 0, 50) . '...';
                 }
                 $content .= "- [{$post->post_title}]({$post_url}):{$excerpt}\n";
             }
@@ -384,95 +383,95 @@ function generate_llms_txt() {
 // 固定ページ保存時の統合処理関数
 // デバッグ有効化: wp-config.phpに define('WP_DEBUG', true); を追加
 function llms_handle_page_save($post_id, $post, $update) {
-    // デバッグ用ログ
-    if (defined('WP_DEBUG') && WP_DEBUG) {
-        error_log("LLMS: llms_handle_page_save called - ID {$post_id}, Type: {$post->post_type}, Status: {$post->post_status}, Update: " . ($update ? 'true' : 'false'));
-    }
-    
-    // 固定ページ以外はスキップ
-    if ($post->post_type !== 'page') {
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log("LLMS: Skipped - not a page (type: {$post->post_type})");
-        }
-        return;
-    }
-    
-    // 自動保存、リビジョンはスキップ
-    if (wp_is_post_autosave($post_id) || wp_is_post_revision($post_id)) {
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log("LLMS: Skipped - autosave or revision");
-        }
-        return;
-    }
-    
-    // 公開状態のページのみ処理
-    if ($post->post_status !== 'publish') {
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log("LLMS: Skipped - not published (status: {$post->post_status})");
-        }
-        return;
-    }
-    
-    // WordPress関数が利用可能かチェック
-    if (!function_exists('get_option') || !function_exists('update_option')) {
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log("LLMS: Skipped - WordPress functions not available");
-        }
-        return;
-    }
-    
-    // 現在の設定を取得
-    $page_settings = get_option('llms_page_settings', array());
-    $enabled_pages = isset($page_settings['enabled_pages']) ? $page_settings['enabled_pages'] : array();
-    $page_order = isset($page_settings['order']) ? $page_settings['order'] : array();
-    
-    if (defined('WP_DEBUG') && WP_DEBUG) {
-        error_log("LLMS: Current enabled pages: " . implode(',', $enabled_pages));
-        error_log("LLMS: Current page order: " . implode(',', $page_order));
-    }
-    
-    // 有効化リストに含まれていない場合は新規作成として自動で有効化
-    if (!in_array($post_id, $enabled_pages)) {
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log("LLMS: Page not in enabled list - treating as new page and auto-enabling");
-        }
-        
-        // 有効化リストに追加
-        $enabled_pages[] = $post_id;
-        
-        // 順序設定の先頭に追加
-        array_unshift($page_order, $post_id);
-        
-        // 設定を更新
-        $page_settings['enabled_pages'] = $enabled_pages;
-        $page_settings['order'] = $page_order;
-        $result = update_option('llms_page_settings', $page_settings);
-        
-        // デバッグ用ログ
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log("LLMS: Auto-enabled page ID {$post_id} - {$post->post_title}");
-            error_log("LLMS: Settings update result: " . ($result ? 'success' : 'failed'));
-            error_log("LLMS: New enabled pages: " . implode(',', $enabled_pages));
-        }
-    } else {
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log("LLMS: Page {$post_id} already in enabled list - no auto-enable needed");
-        }
-    }
-    
-    // LLMS.txtを生成
-    if (defined('WP_DEBUG') && WP_DEBUG) {
-        error_log("LLMS: Generating LLMS.txt...");
-    }
-    
-    $generation_result = generate_llms_txt();
-    
-    // デバッグ用ログ
-    if (defined('WP_DEBUG') && WP_DEBUG) {
-        $action = $update ? 'updated' : 'created';
-        error_log("LLMS: Page {$action} - ID {$post_id} - {$post->post_title}");
-        error_log("LLMS: LLMS.txt generation result: " . ($generation_result ? 'success' : 'failed'));
-    }
+         // デバッグ用ログ（開発環境のみ）
+     if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+         error_log("LLMS: llms_handle_page_save called - ID {$post_id}, Type: {$post->post_type}, Status: {$post->post_status}, Update: " . ($update ? 'true' : 'false'));
+     }
+     
+     // 固定ページ以外はスキップ
+     if ($post->post_type !== 'page') {
+         if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+             error_log("LLMS: Skipped - not a page (type: {$post->post_type})");
+         }
+         return;
+     }
+     
+     // 自動保存、リビジョンはスキップ
+     if (wp_is_post_autosave($post_id) || wp_is_post_revision($post_id)) {
+         if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+             error_log("LLMS: Skipped - autosave or revision");
+         }
+         return;
+     }
+     
+     // 公開状態のページのみ処理
+     if ($post->post_status !== 'publish') {
+         if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+             error_log("LLMS: Skipped - not published (status: {$post->post_status})");
+         }
+         return;
+     }
+     
+     // WordPress関数が利用可能かチェック
+     if (!function_exists('get_option') || !function_exists('update_option')) {
+         if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+             error_log("LLMS: Skipped - WordPress functions not available");
+         }
+         return;
+     }
+     
+     // 現在の設定を取得
+     $page_settings = get_option('llms_page_settings', array());
+     $enabled_pages = isset($page_settings['enabled_pages']) ? $page_settings['enabled_pages'] : array();
+     $page_order = isset($page_settings['order']) ? $page_settings['order'] : array();
+     
+     if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+         error_log("LLMS: Current enabled pages: " . implode(',', $enabled_pages));
+         error_log("LLMS: Current page order: " . implode(',', $page_order));
+     }
+     
+     // 有効化リストに含まれていない場合は新規作成として自動で有効化
+     if (!in_array($post_id, $enabled_pages)) {
+         if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+             error_log("LLMS: Page not in enabled list - treating as new page and auto-enabling");
+         }
+         
+         // 有効化リストに追加
+         $enabled_pages[] = $post_id;
+         
+         // 順序設定の先頭に追加
+         array_unshift($page_order, $post_id);
+         
+         // 設定を更新
+         $page_settings['enabled_pages'] = $enabled_pages;
+         $page_settings['order'] = $page_order;
+         $result = update_option('llms_page_settings', $page_settings);
+         
+         // デバッグ用ログ
+         if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+             error_log("LLMS: Auto-enabled page ID {$post_id} - {$post->post_title}");
+             error_log("LLMS: Settings update result: " . ($result ? 'success' : 'failed'));
+             error_log("LLMS: New enabled pages: " . implode(',', $enabled_pages));
+         }
+     } else {
+         if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+             error_log("LLMS: Page {$post_id} already in enabled list - no auto-enable needed");
+         }
+     }
+     
+     // LLMS.txtを生成
+     if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+         error_log("LLMS: Generating LLMS.txt...");
+     }
+     
+     $generation_result = generate_llms_txt();
+     
+     // デバッグ用ログ
+     if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+         $action = $update ? 'updated' : 'created';
+         error_log("LLMS: Page {$action} - ID {$post_id} - {$post->post_title}");
+         error_log("LLMS: LLMS.txt generation result: " . ($generation_result ? 'success' : 'failed'));
+     }
 }
 
 // 固定ページのステータス変更時にLLMS.txtを生成する関数
@@ -482,16 +481,16 @@ function llms_handle_page_status_change($new_status, $old_status, $post) {
         return;
     }
     
-    // 公開に関わる変更の場合のみ処理
-    if ($new_status === 'publish' || $old_status === 'publish') {
-        // LLMS.txtを生成
-        generate_llms_txt();
-        
-        // デバッグ用ログ
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log("LLMS: Page status changed from {$old_status} to {$new_status} - ID {$post->ID} - {$post->post_title}");
-        }
-    }
+         // 公開に関わる変更の場合のみ処理
+     if ($new_status === 'publish' || $old_status === 'publish') {
+         // LLMS.txtを生成
+         generate_llms_txt();
+         
+         // デバッグ用ログ
+         if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+             error_log("LLMS: Page status changed from {$old_status} to {$new_status} - ID {$post->ID} - {$post->post_title}");
+         }
+     }
 }
 
 // 投稿記事保存時の処理関数
@@ -501,38 +500,38 @@ function llms_handle_post_save($post_id, $post, $update) {
         return;
     }
     
-    // 自動保存、リビジョンはスキップ
-    if (wp_is_post_autosave($post_id) || wp_is_post_revision($post_id)) {
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log("LLMS: Skipped post - autosave or revision (ID: {$post_id})");
-        }
-        return;
-    }
-    
-    // 公開状態の投稿のみ処理
-    if ($post->post_status !== 'publish') {
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log("LLMS: Skipped post - not published (ID: {$post_id}, Status: {$post->post_status})");
-        }
-        return;
-    }
-    
-    // デバッグ用ログ
-    if (defined('WP_DEBUG') && WP_DEBUG) {
-        $action = $update ? 'updated' : 'created';
-        error_log("LLMS: Post {$action} - ID {$post_id}, Type: {$post->post_type}, Title: {$post->post_title}");
-    }
-    
-    // LLMS.txtを生成
-    if (defined('WP_DEBUG') && WP_DEBUG) {
-        error_log("LLMS: Generating LLMS.txt for post change...");
-    }
-    
-    $generation_result = generate_llms_txt();
-    
-    if (defined('WP_DEBUG') && WP_DEBUG) {
-        error_log("LLMS: LLMS.txt generation result for post: " . ($generation_result ? 'success' : 'failed'));
-    }
+         // 自動保存、リビジョンはスキップ
+     if (wp_is_post_autosave($post_id) || wp_is_post_revision($post_id)) {
+         if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+             error_log("LLMS: Skipped post - autosave or revision (ID: {$post_id})");
+         }
+         return;
+     }
+     
+     // 公開状態の投稿のみ処理
+     if ($post->post_status !== 'publish') {
+         if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+             error_log("LLMS: Skipped post - not published (ID: {$post_id}, Status: {$post->post_status})");
+         }
+         return;
+     }
+     
+     // デバッグ用ログ
+     if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+         $action = $update ? 'updated' : 'created';
+         error_log("LLMS: Post {$action} - ID {$post_id}, Type: {$post->post_type}, Title: {$post->post_title}");
+     }
+     
+     // LLMS.txtを生成
+     if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+         error_log("LLMS: Generating LLMS.txt for post change...");
+     }
+     
+     $generation_result = generate_llms_txt();
+     
+     if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+         error_log("LLMS: LLMS.txt generation result for post: " . ($generation_result ? 'success' : 'failed'));
+     }
 }
 
 // 投稿記事のステータス変更時の処理関数
@@ -542,20 +541,20 @@ function llms_handle_post_status_change($new_status, $old_status, $post) {
         return;
     }
     
-    // 公開に関わる変更の場合のみ処理
-    if ($new_status === 'publish' || $old_status === 'publish') {
-        // デバッグ用ログ
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log("LLMS: Post status changed from {$old_status} to {$new_status} - ID {$post->ID}, Type: {$post->post_type}, Title: {$post->post_title}");
-        }
-        
-        // LLMS.txtを生成
-        $generation_result = generate_llms_txt();
-        
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log("LLMS: LLMS.txt generation result for post status change: " . ($generation_result ? 'success' : 'failed'));
-        }
-    }
+         // 公開に関わる変更の場合のみ処理
+     if ($new_status === 'publish' || $old_status === 'publish') {
+         // デバッグ用ログ
+         if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+             error_log("LLMS: Post status changed from {$old_status} to {$new_status} - ID {$post->ID}, Type: {$post->post_type}, Title: {$post->post_title}");
+         }
+         
+         // LLMS.txtを生成
+         $generation_result = generate_llms_txt();
+         
+         if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+             error_log("LLMS: LLMS.txt generation result for post status change: " . ($generation_result ? 'success' : 'failed'));
+         }
+     }
 }
 
 // 投稿・固定ページ削除時の処理関数
@@ -565,17 +564,17 @@ function llms_handle_post_delete($post_id) {
         return;
     }
     
-    // デバッグ用ログ
-    if (defined('WP_DEBUG') && WP_DEBUG) {
-        error_log("LLMS: Post/Page deleted - ID {$post_id}, Type: {$post->post_type}, Title: {$post->post_title}");
-    }
-    
-    // LLMS.txtを生成
-    $generation_result = generate_llms_txt();
-    
-    if (defined('WP_DEBUG') && WP_DEBUG) {
-        error_log("LLMS: LLMS.txt generation result for deletion: " . ($generation_result ? 'success' : 'failed'));
-    }
+         // デバッグ用ログ
+     if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+         error_log("LLMS: Post/Page deleted - ID {$post_id}, Type: {$post->post_type}, Title: {$post->post_title}");
+     }
+     
+     // LLMS.txtを生成
+     $generation_result = generate_llms_txt();
+     
+     if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+         error_log("LLMS: LLMS.txt generation result for deletion: " . ($generation_result ? 'success' : 'failed'));
+     }
 }
 
 // 記事公開・更新時にLLMS.txtを生成（WordPress環境でのみ実行）
@@ -618,7 +617,7 @@ function llms_generator_page() {
     
     // 権限チェック
     if (!current_user_can('manage_options')) {
-        wp_die(__('このページにアクセスする権限がありません。'));
+        wp_die(esc_html__('このページにアクセスする権限がありません。', 'llms-txt-generator'));
     }
     
     $file_path = ABSPATH . 'llms.txt';
@@ -628,9 +627,11 @@ function llms_generator_page() {
     // カスタムテキストの保存処理
     if (isset($_POST['save_custom_text']) && check_admin_referer('llms_custom_text_action', 'llms_custom_text_nonce')) {
         if (function_exists('sanitize_textarea_field') && function_exists('update_option')) {
-            $custom_text = sanitize_textarea_field($_POST['llms_custom_text']);
-            update_option('llms_custom_text', $custom_text);
-            echo '<div class="notice notice-success"><p>カスタムテキストが保存されました！</p></div>';
+            if (isset($_POST['llms_custom_text'])) {
+                $custom_text = sanitize_textarea_field(wp_unslash($_POST['llms_custom_text']));
+                update_option('llms_custom_text', $custom_text);
+                echo '<div class="notice notice-success"><p>カスタムテキストが保存されました！</p></div>';
+            }
         }
     }
     
@@ -646,8 +647,8 @@ function llms_generator_page() {
     // 投稿タイプ設定の保存処理
     if (isset($_POST['save_post_types']) && check_admin_referer('llms_post_types_action', 'llms_post_types_nonce')) {
         if (function_exists('update_option')) {
-            $enabled_post_types = isset($_POST['enabled_post_types']) ? array_map('sanitize_text_field', $_POST['enabled_post_types']) : array();
-            $post_type_order_raw = isset($_POST['post_type_order']) ? trim($_POST['post_type_order']) : '';
+                         $enabled_post_types = isset($_POST['enabled_post_types']) ? array_map('sanitize_text_field', wp_unslash($_POST['enabled_post_types'])) : array();
+             $post_type_order_raw = isset($_POST['post_type_order']) ? sanitize_text_field(wp_unslash($_POST['post_type_order'])) : '';
                         
             if (!empty($post_type_order_raw)) {
                 $post_type_order = array_map('sanitize_text_field', explode(',', $post_type_order_raw));
@@ -674,8 +675,8 @@ function llms_generator_page() {
     // 固定ページ設定の保存処理
     if (isset($_POST['save_page_settings']) && check_admin_referer('llms_page_settings_action', 'llms_page_settings_nonce')) {
         if (function_exists('update_option')) {
-            $enabled_pages = isset($_POST['enabled_pages']) ? array_map('intval', $_POST['enabled_pages']) : array();
-            $page_order_raw = isset($_POST['page_order']) ? trim($_POST['page_order']) : '';
+                         $enabled_pages = isset($_POST['enabled_pages']) ? array_map('intval', wp_unslash($_POST['enabled_pages'])) : array();
+             $page_order_raw = isset($_POST['page_order']) ? sanitize_text_field(wp_unslash($_POST['page_order'])) : '';
             
             if (!empty($page_order_raw)) {
                 $page_order = array_map('intval', explode(',', $page_order_raw));
@@ -755,7 +756,7 @@ function llms_generator_page() {
     echo '<th scope="row">カスタムテキスト</th>';
     echo '<td>';
     $escaped_text = function_exists('esc_textarea') ? esc_textarea($current_custom_text) : htmlspecialchars($current_custom_text, ENT_QUOTES, 'UTF-8');
-    echo '<textarea name="llms_custom_text" rows="8" cols="80" class="large-text">' . $escaped_text . '</textarea>';
+    echo '<textarea name="llms_custom_text" rows="8" cols="80" class="large-text">' . esc_textarea($current_custom_text) . '</textarea>';
     echo '<p class="description">Markdownフォーマットで記述してください。このテキストはLLMS.txtの最上部に表示されます。</p>';
     echo '</td>';
     echo '</tr>';
@@ -810,8 +811,9 @@ function llms_generator_page() {
         echo '<p><strong>チェックした投稿タイプのみが出力されます：</strong></p>';
         foreach ($available_post_types as $post_type_key => $post_type_obj) {
             $checked = empty($enabled_post_types) || in_array($post_type_key, $enabled_post_types) ? ' checked' : '';
+            $checked = esc_attr($checked);
             echo '<label style="display: block; margin-bottom: 5px;">';
-            echo '<input type="checkbox" name="enabled_post_types[]" value="' . esc_attr($post_type_key) . '"' . $checked . '>';
+            echo '<input type="checkbox" name="enabled_post_types[]" value="' . esc_attr($post_type_key) . '"' . esc_attr($checked) . '>';
             echo ' ' . esc_html($post_type_obj->labels->name) . ' (' . esc_html($post_type_key) . ')';
             echo '</label>';
         }
@@ -857,13 +859,15 @@ function llms_generator_page() {
                 
                 // 上矢印ボタン
                 $up_disabled = $is_first ? ' disabled' : '';
-                echo '<button type="button" class="move-up button button-small"' . $up_disabled . ' style="margin-right: 5px;" data-post-type="' . esc_attr($post_type_key) . '">';
+                $up_disabled = esc_attr($up_disabled);
+                echo '<button type="button" class="move-up button button-small"' . esc_attr($up_disabled) . ' style="margin-right: 5px;" data-post-type="' . esc_attr($post_type_key) . '">';
                 echo '↑';
                 echo '</button>';
                 
                 // 下矢印ボタン
                 $down_disabled = $is_last ? ' disabled' : '';
-                echo '<button type="button" class="move-down button button-small"' . $down_disabled . ' data-post-type="' . esc_attr($post_type_key) . '">';
+                $down_disabled = esc_attr($down_disabled);
+                echo '<button type="button" class="move-down button button-small"' . esc_attr($down_disabled) . ' data-post-type="' . esc_attr($post_type_key) . '">';
                 echo '↓';
                 echo '</button>';
                 
@@ -1005,10 +1009,11 @@ function llms_generator_page() {
             foreach ($child_pages as $page) {
                 // enabledリストに含まれている場合のみチェック済み
                 $checked = (!empty($enabled_pages) && in_array($page->ID, $enabled_pages)) ? ' checked' : '';
+            $checked = esc_attr($checked);
                 $indent = str_repeat('&nbsp;&nbsp;&nbsp;&nbsp;', $level);
                 echo '<label style="display: block; margin-bottom: 5px;">';
-                echo $indent;
-                echo '<input type="checkbox" name="enabled_pages[]" value="' . esc_attr($page->ID) . '"' . $checked . '>';
+                echo esc_html($indent);
+                echo '<input type="checkbox" name="enabled_pages[]" value="' . esc_attr($page->ID) . '"' . esc_attr($checked) . '>';
                 echo ' ' . esc_html($page->post_title);
                 if ($level == 0) {
                     echo ' <span style="color: #999; font-size: 12px;">(親ページ)</span>';
@@ -1084,7 +1089,7 @@ function llms_generator_page() {
                     }
                 }
             }
-            echo $page_hierarchy . esc_html($page->post_title) . ' (ID: ' . esc_html($page->ID) . ')';
+            echo esc_html($page_hierarchy) . esc_html($page->post_title) . ' (ID: ' . esc_html($page->ID) . ')';
             echo '</span>';
             
             // 矢印ボタン
@@ -1092,13 +1097,15 @@ function llms_generator_page() {
             
             // 上矢印ボタン
             $up_disabled = $is_first ? ' disabled' : '';
-            echo '<button type="button" class="page-move-up button button-small"' . $up_disabled . ' style="margin-right: 5px;" data-page-id="' . esc_attr($page->ID) . '">';
+            $up_disabled = esc_attr($up_disabled);
+            echo '<button type="button" class="page-move-up button button-small"' . esc_attr($up_disabled) . ' style="margin-right: 5px;" data-page-id="' . esc_attr($page->ID) . '">';
             echo '↑';
             echo '</button>';
             
             // 下矢印ボタン
             $down_disabled = $is_last ? ' disabled' : '';
-            echo '<button type="button" class="page-move-down button button-small"' . $down_disabled . ' data-page-id="' . esc_attr($page->ID) . '">';
+            $down_disabled = esc_attr($down_disabled);
+            echo '<button type="button" class="page-move-down button button-small"' . esc_attr($down_disabled) . ' data-page-id="' . esc_attr($page->ID) . '">';
             echo '↓';
             echo '</button>';
             
@@ -1239,19 +1246,19 @@ function llms_generator_page() {
     $escaped_path = function_exists('esc_html') ? esc_html($file_path) : htmlspecialchars($file_path, ENT_QUOTES, 'UTF-8');
     $escaped_url = function_exists('esc_url') ? esc_url($file_url) : htmlspecialchars($file_url, ENT_QUOTES, 'UTF-8');
     $escaped_url_text = function_exists('esc_html') ? esc_html($file_url) : htmlspecialchars($file_url, ENT_QUOTES, 'UTF-8');
-    echo 'ファイルパス: <code>' . $escaped_path . '</code><br>';
-    echo 'アクセスURL: <a href="' . $escaped_url . '" target="_blank">' . $escaped_url_text . '</a></p>';
+    echo 'ファイルパス: <code>' . esc_html($file_path) . '</code><br>';
+    echo 'アクセスURL: <a href="' . esc_url($file_url) . '" target="_blank">' . esc_html($file_url) . '</a></p>';
     
     // 現在の設定表示
     echo '<p><strong>現在の設定:</strong><br>';
     echo '文字コード: <strong>' . ($current_encoding === 'UTF-8' ? 'UTF-8' : 'Shift-JIS') . '</strong><br>';
     if (!empty($enabled_post_types)) {
-        echo '有効な投稿タイプ: <strong>' . implode(', ', $enabled_post_types) . '</strong><br>';
+        echo '有効な投稿タイプ: <strong>' . esc_html(implode(', ', $enabled_post_types)) . '</strong><br>';
     } else {
         echo '有効な投稿タイプ: <strong>すべて</strong><br>';
     }
     if (!empty($post_type_order)) {
-        echo '出力順序: <strong>' . implode(' → ', $post_type_order) . '</strong><br>';
+        echo '出力順序: <strong>' . esc_html(implode(' → ', $post_type_order)) . '</strong><br>';
     }
     if (!empty($enabled_pages)) {
         $enabled_page_titles = array();
@@ -1263,7 +1270,7 @@ function llms_generator_page() {
                 }
             }
         }
-        echo '有効な固定ページ: <strong>' . implode(', ', $enabled_page_titles) . '</strong>';
+        echo '有効な固定ページ: <strong>' . esc_html(implode(', ', $enabled_page_titles)) . '</strong>';
     } else {
         echo '有効な固定ページ: <strong>なし</strong>';
     }
@@ -1283,18 +1290,18 @@ function llms_generator_page() {
             }
         }
         if (!empty($output_page_titles)) {
-            echo '<br>固定ページ出力順序: <strong>' . implode(' → ', $output_page_titles) . '</strong>';
+                            echo '<br>固定ページ出力順序: <strong>' . esc_html(implode(' → ', $output_page_titles)) . '</strong>';
         }
     }
     echo '</p>';
     
     if (file_exists($file_path)) {
-        $last_modified = date('Y-m-d H:i:s', filemtime($file_path));
+        $last_modified = gmdate('Y-m-d H:i:s', filemtime($file_path));
         echo '<p><strong>現在のファイル状況:</strong><br>';
         $escaped_modified = function_exists('esc_html') ? esc_html($last_modified) : htmlspecialchars($last_modified, ENT_QUOTES, 'UTF-8');
-        echo '最終更新: ' . $escaped_modified . '<br>';
+        echo '最終更新: ' . esc_html($last_modified) . '<br>';
         $file_size = function_exists('size_format') ? size_format(filesize($file_path)) : number_format(filesize($file_path)) . ' bytes';
-        echo 'ファイルサイズ: ' . $file_size . '</p>';
+        echo 'ファイルサイズ: ' . esc_html($file_size) . '</p>';
     } else {
         echo '<p><strong>現在のファイル状況:</strong> ファイルはまだ生成されていません</p>';
     }
