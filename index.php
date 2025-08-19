@@ -384,60 +384,94 @@ function generate_llms_txt() {
 // 固定ページ保存時の統合処理関数
 // デバッグ有効化: wp-config.phpに define('WP_DEBUG', true); を追加
 function llms_handle_page_save($post_id, $post, $update) {
+    // デバッグ用ログ
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log("LLMS: llms_handle_page_save called - ID {$post_id}, Type: {$post->post_type}, Status: {$post->post_status}, Update: " . ($update ? 'true' : 'false'));
+    }
+    
     // 固定ページ以外はスキップ
     if ($post->post_type !== 'page') {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: Skipped - not a page (type: {$post->post_type})");
+        }
         return;
     }
     
     // 自動保存、リビジョンはスキップ
     if (wp_is_post_autosave($post_id) || wp_is_post_revision($post_id)) {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: Skipped - autosave or revision");
+        }
         return;
     }
     
     // 公開状態のページのみ処理
     if ($post->post_status !== 'publish') {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: Skipped - not published (status: {$post->post_status})");
+        }
         return;
     }
     
     // WordPress関数が利用可能かチェック
     if (!function_exists('get_option') || !function_exists('update_option')) {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: Skipped - WordPress functions not available");
+        }
         return;
     }
     
-    // 新規作成の場合は自動で有効化
-    if (!$update) {
-        // 現在の設定を取得
-        $page_settings = get_option('llms_page_settings', array());
-        $enabled_pages = isset($page_settings['enabled_pages']) ? $page_settings['enabled_pages'] : array();
-        $page_order = isset($page_settings['order']) ? $page_settings['order'] : array();
+    // 現在の設定を取得
+    $page_settings = get_option('llms_page_settings', array());
+    $enabled_pages = isset($page_settings['enabled_pages']) ? $page_settings['enabled_pages'] : array();
+    $page_order = isset($page_settings['order']) ? $page_settings['order'] : array();
+    
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log("LLMS: Current enabled pages: " . implode(',', $enabled_pages));
+        error_log("LLMS: Current page order: " . implode(',', $page_order));
+    }
+    
+    // 有効化リストに含まれていない場合は新規作成として自動で有効化
+    if (!in_array($post_id, $enabled_pages)) {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: Page not in enabled list - treating as new page and auto-enabling");
+        }
         
-        // 既に有効化リストに含まれていない場合のみ追加
-        if (!in_array($post_id, $enabled_pages)) {
-            // 有効化リストに追加
-            $enabled_pages[] = $post_id;
-            
-            // 順序設定の先頭に追加
-            array_unshift($page_order, $post_id);
-            
-            // 設定を更新
-            $page_settings['enabled_pages'] = $enabled_pages;
-            $page_settings['order'] = $page_order;
-            update_option('llms_page_settings', $page_settings);
-            
-            // デバッグ用ログ
-            if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log("LLMS: Auto-enabled new page ID {$post_id} - {$post->post_title}");
-            }
+        // 有効化リストに追加
+        $enabled_pages[] = $post_id;
+        
+        // 順序設定の先頭に追加
+        array_unshift($page_order, $post_id);
+        
+        // 設定を更新
+        $page_settings['enabled_pages'] = $enabled_pages;
+        $page_settings['order'] = $page_order;
+        $result = update_option('llms_page_settings', $page_settings);
+        
+        // デバッグ用ログ
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: Auto-enabled page ID {$post_id} - {$post->post_title}");
+            error_log("LLMS: Settings update result: " . ($result ? 'success' : 'failed'));
+            error_log("LLMS: New enabled pages: " . implode(',', $enabled_pages));
+        }
+    } else {
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("LLMS: Page {$post_id} already in enabled list - no auto-enable needed");
         }
     }
     
     // LLMS.txtを生成
-    generate_llms_txt();
+    if (defined('WP_DEBUG') && WP_DEBUG) {
+        error_log("LLMS: Generating LLMS.txt...");
+    }
+    
+    $generation_result = generate_llms_txt();
     
     // デバッグ用ログ
     if (defined('WP_DEBUG') && WP_DEBUG) {
         $action = $update ? 'updated' : 'created';
         error_log("LLMS: Page {$action} - ID {$post_id} - {$post->post_title}");
+        error_log("LLMS: LLMS.txt generation result: " . ($generation_result ? 'success' : 'failed'));
     }
 }
 
