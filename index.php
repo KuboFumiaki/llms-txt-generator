@@ -152,38 +152,123 @@ function generate_llms_txt() {
     if (!empty($pages)) {
         $content .= "## 固定ページ\n";
         
-        // 固定ページの順序設定に従って並び替え
-        $ordered_pages = array();
-        $pages_by_id = array();
-        
         // ページをIDでインデックス化
+        $pages_by_id = array();
         foreach ($pages as $page) {
             $pages_by_id[$page->ID] = $page;
         }
         
-        // 順序設定に従って並び替え
+        // 親ページと子ページを分離
+        $parent_pages = array();
+        $child_pages_by_parent = array();
+        
+        foreach ($pages as $page) {
+            if ($page->post_parent == 0) {
+                // 親ページ
+                $parent_pages[] = $page;
+            } else {
+                // 子ページ
+                if (!isset($child_pages_by_parent[$page->post_parent])) {
+                    $child_pages_by_parent[$page->post_parent] = array();
+                }
+                $child_pages_by_parent[$page->post_parent][] = $page;
+            }
+        }
+        
+        // 親ページの順序設定に従って並び替え
+        $ordered_parent_pages = array();
+        $parent_pages_by_id = array();
+        
+        foreach ($parent_pages as $page) {
+            $parent_pages_by_id[$page->ID] = $page;
+        }
+        
+        // 順序設定に従って親ページを並び替え
         if (!empty($page_order)) {
             foreach ($page_order as $page_id) {
-                if (isset($pages_by_id[$page_id])) {
-                    $ordered_pages[] = $pages_by_id[$page_id];
-                    unset($pages_by_id[$page_id]);
+                if (isset($parent_pages_by_id[$page_id])) {
+                    $ordered_parent_pages[] = $parent_pages_by_id[$page_id];
+                    unset($parent_pages_by_id[$page_id]);
                 }
             }
         }
         
-        // 順序設定にない固定ページを最後に追加
-        $ordered_pages = array_merge($ordered_pages, array_values($pages_by_id));
+        // 順序設定にない親ページを最後に追加
+        $ordered_parent_pages = array_merge($ordered_parent_pages, array_values($parent_pages_by_id));
         
-        // 全ての固定ページを出力
-        foreach ($ordered_pages as $page) {
-            $page_url = get_permalink($page->ID);
-            if (function_exists('wp_trim_words')) {
-                $excerpt = wp_trim_words($page->post_content, 15, '...');
-            } else {
-                $excerpt = mb_substr(strip_tags($page->post_content), 0, 50) . '...';
+        // 順序設定にない子ページも追加（親ページがない子ページ）
+        $orphan_child_pages = array();
+        if (!empty($page_order)) {
+            foreach ($page_order as $page_id) {
+                if (isset($pages_by_id[$page_id]) && $pages_by_id[$page_id]->post_parent != 0) {
+                    // 親ページが選択されていない子ページを個別に出力
+                    if (!isset($parent_pages_by_id[$pages_by_id[$page_id]->post_parent]) && 
+                        !in_array($pages_by_id[$page_id], $orphan_child_pages)) {
+                        $orphan_child_pages[] = $pages_by_id[$page_id];
+                    }
+                }
             }
-            $content .= "- [{$page->post_title}]({$page_url}):{$excerpt}\n";
         }
+        
+        // 親ページとその子ページを階層構造で出力
+        foreach ($ordered_parent_pages as $parent_page) {
+            $page_url = get_permalink($parent_page->ID);
+            if (function_exists('wp_trim_words')) {
+                $excerpt = wp_trim_words($parent_page->post_content, 15, '...');
+            } else {
+                $excerpt = mb_substr(strip_tags($parent_page->post_content), 0, 50) . '...';
+            }
+            $content .= "- [{$parent_page->post_title}]({$page_url}):{$excerpt}\n";
+            
+            // この親ページの子ページがあれば出力
+            if (isset($child_pages_by_parent[$parent_page->ID])) {
+                $child_pages = $child_pages_by_parent[$parent_page->ID];
+                
+                // 子ページの順序設定
+                $ordered_child_pages = array();
+                $child_pages_by_id = array();
+                
+                foreach ($child_pages as $child_page) {
+                    $child_pages_by_id[$child_page->ID] = $child_page;
+                }
+                
+                // 順序設定に従って子ページを並び替え
+                if (!empty($page_order)) {
+                    foreach ($page_order as $page_id) {
+                        if (isset($child_pages_by_id[$page_id])) {
+                            $ordered_child_pages[] = $child_pages_by_id[$page_id];
+                            unset($child_pages_by_id[$page_id]);
+                        }
+                    }
+                }
+                
+                // 順序設定にない子ページを最後に追加
+                $ordered_child_pages = array_merge($ordered_child_pages, array_values($child_pages_by_id));
+                
+                // 子ページを出力
+                foreach ($ordered_child_pages as $child_page) {
+                    $child_url = get_permalink($child_page->ID);
+                    if (function_exists('wp_trim_words')) {
+                        $child_excerpt = wp_trim_words($child_page->post_content, 15, '...');
+                    } else {
+                        $child_excerpt = mb_substr(strip_tags($child_page->post_content), 0, 50) . '...';
+                    }
+                    $content .= "  - [{$child_page->post_title}]({$child_url}):{$child_excerpt}\n";
+                }
+            }
+        }
+        
+        // 親ページが選択されていない独立した子ページを出力
+        foreach ($orphan_child_pages as $orphan_page) {
+            $page_url = get_permalink($orphan_page->ID);
+            if (function_exists('wp_trim_words')) {
+                $excerpt = wp_trim_words($orphan_page->post_content, 15, '...');
+            } else {
+                $excerpt = mb_substr(strip_tags($orphan_page->post_content), 0, 50) . '...';
+            }
+            $content .= "- [{$orphan_page->post_title}]({$page_url}):{$excerpt}\n";
+        }
+        
         $content .= "\n";
     }
     
